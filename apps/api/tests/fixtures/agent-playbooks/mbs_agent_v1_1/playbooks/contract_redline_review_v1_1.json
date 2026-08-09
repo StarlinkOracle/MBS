@@ -1,0 +1,14 @@
+{
+  "stableId": "contract_redline_review_v1_1",
+  "title": "Contract Redline Review v1.1",
+  "status": "READY",
+  "requiresTools": [
+    "contract.redline.generate",
+    "contract.draft.generatePdf",
+    "contract.references.extract"
+  ],
+  "skillSequence": [
+    "contract_redline_generate_skill_v1_1",
+    "contract_redline_finalize_skill_v1_1"
+  ]
+}

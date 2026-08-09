@@ -1,0 +1,27 @@
+[
+  {
+    "templateStableId": "co_install_contract_standard",
+    "version": 1,
+    "schema": {
+      "type": "object",
+      "properties": {
+        "customer.fullName": {
+          "type": "string",
+          "default": "{{customer.fullName}}"
+        },
+        "job.addressLine1": {
+          "type": "string",
+          "default": "{{job.addressLine1}}"
+        },
+        "invoice.daysDue": {
+          "type": "integer",
+          "default": 10
+        }
+      },
+      "required": [
+        "customer.fullName",
+        "job.addressLine1"
+      ]
+    }
+  }
+]

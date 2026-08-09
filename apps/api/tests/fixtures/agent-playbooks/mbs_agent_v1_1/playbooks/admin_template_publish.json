@@ -1,0 +1,12 @@
+{
+  "stableId": "admin_template_publish",
+  "title": "Admin Template Publish",
+  "status": "SPEC_ONLY",
+  "requiresTools": [
+    "admin.template.publish",
+    "admin.template.promote"
+  ],
+  "skillSequence": [
+    "admin_template_publish_stub_skill_v1_1"
+  ]
+}

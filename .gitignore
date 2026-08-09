@@ -1,0 +1,10 @@
+node_modules
+dist
+.env
+.env.*
+!.env.example
+coverage
+.prisma
+.DS_Store
+backups/
+MBS_REVIEW_BUNDLE.zip

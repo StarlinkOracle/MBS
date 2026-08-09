@@ -1,0 +1,169 @@
+{
+  "manifestVersion": 1,
+  "generatedAt": "2026-02-23T23:48:49.466Z",
+  "packs": [
+    {
+      "id": "co_legal_pack_v1",
+      "sourceRepo": "StarlinkOracle/Artifacts-Legal-Packs",
+      "sourceRef": "CO-v1.0.0",
+      "rootPath": "apps/api/tests/fixtures/legal-packs/CO/v1",
+      "fileCount": 9,
+      "packSha256": "31baf974260fbf2dcd3b80b37aa3b2efc3ffb45dd102f26bb3a7e0921eec648a",
+      "packContentSha256": "dd8368ce0cf80989cad0b50c1628e42a2098ebc0b80b2b159390d4a30f74f539",
+      "files": [
+        {
+          "path": "apps/api/tests/fixtures/legal-packs/CO/v1/clauses.json",
+          "sizeBytes": 626,
+          "sha256": "d2557d8d8ca05edad470b62d270eb92f0f6f98c49754148f3643f3f08505c215"
+        },
+        {
+          "path": "apps/api/tests/fixtures/legal-packs/CO/v1/legal_pack.json",
+          "sizeBytes": 279,
+          "sha256": "eb1b6049041b3892a26758bf613ec45379bf8294110d990c2c81abb1a99c7ace"
+        },
+        {
+          "path": "apps/api/tests/fixtures/legal-packs/CO/v1/placeholder_whitelist.json",
+          "sizeBytes": 69,
+          "sha256": "4c60b8230cc2e85d01c9e55ccd52bfcbb0289de2d353af5fbb0bd1776fb66694"
+        },
+        {
+          "path": "apps/api/tests/fixtures/legal-packs/CO/v1/schema/clauses.schema.json",
+          "sizeBytes": 687,
+          "sha256": "2bd897c53458f08d87564d5022316e7f72c4499b647c925c4337d6bf3631486c"
+        },
+        {
+          "path": "apps/api/tests/fixtures/legal-packs/CO/v1/schema/legal_pack.schema.json",
+          "sizeBytes": 504,
+          "sha256": "2b334a6d52d184ad044899cfd15dc5413ca13adea52f029f61fa469b8c82d73d"
+        },
+        {
+          "path": "apps/api/tests/fixtures/legal-packs/CO/v1/schema/templates.schema.json",
+          "sizeBytes": 777,
+          "sha256": "24db1bbcb9fa975f771539089dbd29758136ad527cbfcbca659d0c0ff05f9b17"
+        },
+        {
+          "path": "apps/api/tests/fixtures/legal-packs/CO/v1/schema/variable_schemas.schema.json",
+          "sizeBytes": 392,
+          "sha256": "f2ef39a796f583396b4180bb320cc910d9a84db54112cb847d352004b38a0617"
+        },
+        {
+          "path": "apps/api/tests/fixtures/legal-packs/CO/v1/templates.json",
+          "sizeBytes": 742,
+          "sha256": "f7a3e34bf6aee36bbb492ec2bbaa80eed13bc8115ec49ff06940a4dc518b6978"
+        },
+        {
+          "path": "apps/api/tests/fixtures/legal-packs/CO/v1/variable_schemas.json",
+          "sizeBytes": 567,
+          "sha256": "6751e6454ecdda167fa6685e2af486b8c5cd9d4dfee2ea0224f032d0a72d11a2"
+        }
+      ]
+    },
+    {
+      "id": "mbs_agent_v1",
+      "sourceRepo": "StarlinkOracle/MBS-Agent-Orchestration-Packs",
+      "sourceRef": "mbs_agent_v1",
+      "rootPath": "apps/api/tests/fixtures/agent-playbooks/mbs_agent_v1",
+      "fileCount": 8,
+      "packSha256": "99eb4ef8aabe2ef508ca74679f538372fb7ab152ff1fa0b0d372298665ac743c",
+      "packContentSha256": "732272da981ce3e8ca0d31697ed277174e92531ce7a7a257050ad79510b57dfa",
+      "files": [
+        {
+          "path": "apps/api/tests/fixtures/agent-playbooks/mbs_agent_v1/playbooks/admin_template_publish.json",
+          "sizeBytes": 228,
+          "sha256": "6229875f8a432d60f6bad832098e577abf218fd447d2fc128c9333fd122d3f6e"
+        },
+        {
+          "path": "apps/api/tests/fixtures/agent-playbooks/mbs_agent_v1/playbooks/contract_redline_review_v1.json",
+          "sizeBytes": 225,
+          "sha256": "5b91fdbc230245cef8eaf718850969a5700cc1312730fa88392b00a401250fb2"
+        },
+        {
+          "path": "apps/api/tests/fixtures/agent-playbooks/mbs_agent_v1/schema/playbook.schema.json",
+          "sizeBytes": 679,
+          "sha256": "f26bd98d5b1c0de5674b3514638b360bc1b1c1540ff753da97fd5d3249efd4b4"
+        },
+        {
+          "path": "apps/api/tests/fixtures/agent-playbooks/mbs_agent_v1/schema/results.schema.json",
+          "sizeBytes": 252,
+          "sha256": "b4cf0e9945933b2a01bc450174ae65c5408aca538c8409f81d20953ac2ebf987"
+        },
+        {
+          "path": "apps/api/tests/fixtures/agent-playbooks/mbs_agent_v1/schema/skill.schema.json",
+          "sizeBytes": 1448,
+          "sha256": "d13b24b22f293f295ed4a04757ed54ee614e6824b51e6d46763985fbf8c2fd7b"
+        },
+        {
+          "path": "apps/api/tests/fixtures/agent-playbooks/mbs_agent_v1/schema/tools_catalog.schema.json",
+          "sizeBytes": 635,
+          "sha256": "cf45aa8fbc2e54951e5e1eb671efd130e9a60d0a380d7c03659b1c56258c0ddd"
+        },
+        {
+          "path": "apps/api/tests/fixtures/agent-playbooks/mbs_agent_v1/skills/contract_redline_skill_v1.json",
+          "sizeBytes": 853,
+          "sha256": "0fb704d6e3326e791e5f7f57acc8ca6c58fc70b3ab44e9c4ffa5b2cb6a10d676"
+        },
+        {
+          "path": "apps/api/tests/fixtures/agent-playbooks/mbs_agent_v1/tools_catalog.json",
+          "sizeBytes": 305,
+          "sha256": "bb51a5dd4b8cfeee5120272165aea907609fd0369f5adb9155a65310cb0a0af0"
+        }
+      ]
+    },
+    {
+      "id": "mbs_agent_v1_1",
+      "sourceRepo": "StarlinkOracle/MBS-Agent-Orchestration-Packs",
+      "sourceRef": "mbs_agent_v1_1",
+      "rootPath": "apps/api/tests/fixtures/agent-playbooks/mbs_agent_v1_1",
+      "fileCount": 9,
+      "packSha256": "6ac1a5a2d3d2e5d59a5182ac2c48a784f6218b47294931d8cfa969e148ed392a",
+      "packContentSha256": "38c2a168eedde0b3a5e766f2b4626acd725e24f17b7936b3bf9c62a4d7b984b8",
+      "files": [
+        {
+          "path": "apps/api/tests/fixtures/agent-playbooks/mbs_agent_v1_1/playbook.schema.json",
+          "sizeBytes": 678,
+          "sha256": "659e1844891368e07e6d091d46d86da279c606898afd1a81d1d25f2b71a2e9f4"
+        },
+        {
+          "path": "apps/api/tests/fixtures/agent-playbooks/mbs_agent_v1_1/playbooks/admin_template_publish.json",
+          "sizeBytes": 261,
+          "sha256": "72a78bc1a685b957489a1a702902cc62e1ab7c7595ff61a32b6eb4e247e0017e"
+        },
+        {
+          "path": "apps/api/tests/fixtures/agent-playbooks/mbs_agent_v1_1/playbooks/contract_redline_review_v1_1.json",
+          "sizeBytes": 353,
+          "sha256": "ec8009a2d5bc237e3b6994233226a3605466d69e1b44a845331cdb6577d7109c"
+        },
+        {
+          "path": "apps/api/tests/fixtures/agent-playbooks/mbs_agent_v1_1/skill.schema.json",
+          "sizeBytes": 1200,
+          "sha256": "79e1422d9d41c578ed634ef91d690e787c5f16f59c0664f55f930d32dff17096"
+        },
+        {
+          "path": "apps/api/tests/fixtures/agent-playbooks/mbs_agent_v1_1/skills/admin_template_publish_stub_skill_v1_1.json",
+          "sizeBytes": 296,
+          "sha256": "b7f014adb6f973babf5edd6caf9ea70d21f71e481e42cd9ecc93a791f252dab0"
+        },
+        {
+          "path": "apps/api/tests/fixtures/agent-playbooks/mbs_agent_v1_1/skills/contract_redline_finalize_skill_v1_1.json",
+          "sizeBytes": 317,
+          "sha256": "4effa78a19312bcc44ca175c1d1fd23f355a62db38d409b235df4a34dbbbe548"
+        },
+        {
+          "path": "apps/api/tests/fixtures/agent-playbooks/mbs_agent_v1_1/skills/contract_redline_generate_skill_v1_1.json",
+          "sizeBytes": 356,
+          "sha256": "405465950701e027b3d11ea4e4ffff56168d094fd13521b7fb0e58c0fe336b8e"
+        },
+        {
+          "path": "apps/api/tests/fixtures/agent-playbooks/mbs_agent_v1_1/tools_catalog.json",
+          "sizeBytes": 380,
+          "sha256": "681ed48be21b9c77c8cf127b23d9e33773a6071a7907afd73891959c737f2c3c"
+        },
+        {
+          "path": "apps/api/tests/fixtures/agent-playbooks/mbs_agent_v1_1/tools_catalog.schema.json",
+          "sizeBytes": 699,
+          "sha256": "98a87eb9f855fdba503100e751d6f7aaf62d226262308f901570d0f5e045bf82"
+        }
+      ]
+    }
+  ]
+}

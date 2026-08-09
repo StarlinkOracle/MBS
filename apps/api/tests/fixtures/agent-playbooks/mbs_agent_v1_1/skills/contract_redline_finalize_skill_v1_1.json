@@ -1,0 +1,14 @@
+{
+  "stableId": "contract_redline_finalize_skill_v1_1",
+  "title": "Finalize redline artifacts",
+  "toolSequence": [
+    {
+      "stableId": "generate_pdf",
+      "toolName": "contract.draft.generatePdf"
+    },
+    {
+      "stableId": "extract_references",
+      "toolName": "contract.references.extract"
+    }
+  ]
+}

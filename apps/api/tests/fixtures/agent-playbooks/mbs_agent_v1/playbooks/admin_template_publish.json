@@ -1,0 +1,7 @@
+{
+  "stableId": "admin_template_publish",
+  "title": "Admin publish template",
+  "status": "SPEC_ONLY",
+  "requiresTools": ["admin.template.publish", "admin.template.promote"],
+  "skillSequence": ["contract_redline_skill_v1"]
+}

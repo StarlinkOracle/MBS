@@ -1,0 +1,33 @@
+{
+  "stableId": "contract_redline_skill_v1",
+  "title": "Generate contract redline artifacts",
+  "requestIdPolicy": {
+    "mode": "DETERMINISTIC",
+    "includeCorrelationId": true
+  },
+  "toolSequence": [
+    {
+      "stableId": "generate",
+      "toolName": "contract.redline.generate",
+      "requiresRequestId": true,
+      "requestIdField": "requestId",
+      "riskLevel": "LOW",
+      "keyInputFields": ["contractId"]
+    },
+    {
+      "stableId": "pdf",
+      "toolName": "contract.draft.generatePdf",
+      "requiresRequestId": true,
+      "requestIdField": "requestId",
+      "riskLevel": "MEDIUM",
+      "retryOnRecoverableFailure": true,
+      "keyInputFields": ["contractId"]
+    },
+    {
+      "stableId": "references",
+      "toolName": "contract.references.extract",
+      "requiresRequestId": false,
+      "riskLevel": "LOW"
+    }
+  ]
+}

@@ -1,0 +1,166 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: hsl(0, 0%, 100%);
+  --foreground: hsl(20, 14.3%, 4.1%);
+  --muted: hsl(60, 4.8%, 95.9%);
+  --muted-foreground: hsl(25, 5.3%, 44.7%);
+  --popover: hsl(0, 0%, 100%);
+  --popover-foreground: hsl(20, 14.3%, 4.1%);
+  --card: hsl(0, 0%, 100%);
+  --card-foreground: hsl(20, 14.3%, 4.1%);
+  --border: hsl(20, 5.9%, 90%);
+  --input: hsl(20, 5.9%, 90%);
+  --primary: hsl(186, 92%, 35%);
+  --primary-foreground: hsl(211, 100%, 99%);
+  --secondary: hsl(60, 4.8%, 95.9%);
+  --secondary-foreground: hsl(24, 9.8%, 10%);
+  --accent: hsl(60, 4.8%, 95.9%);
+  --accent-foreground: hsl(24, 9.8%, 10%);
+  --destructive: hsl(0, 84.2%, 60.2%);
+  --destructive-foreground: hsl(60, 9.1%, 97.8%);
+  --ring: hsl(20, 14.3%, 4.1%);
+  --radius: 0.5rem;
+  
+  /* Russell Comfort logo colors */
+  --teal-primary: hsl(196, 100%, 25%);
+  --teal-dark: hsl(196, 100%, 18%);
+  --blue-primary: hsl(196, 100%, 35%);
+  --blue-light: hsl(196, 80%, 45%);
+  --red-accent: hsl(0, 85%, 50%);
+  --red-light: hsl(0, 85%, 60%);
+  --navy-dark: hsl(210, 100%, 15%);
+}
+
+.dark {
+  --background: hsl(240, 10%, 3.9%);
+  --foreground: hsl(0, 0%, 98%);
+  --muted: hsl(240, 3.7%, 15.9%);
+  --muted-foreground: hsl(240, 5%, 64.9%);
+  --popover: hsl(240, 10%, 3.9%);
+  --popover-foreground: hsl(0, 0%, 98%);
+  --card: hsl(240, 10%, 3.9%);
+  --card-foreground: hsl(0, 0%, 98%);
+  --border: hsl(240, 3.7%, 15.9%);
+  --input: hsl(240, 3.7%, 15.9%);
+  --primary: hsl(186, 92%, 35%);
+  --primary-foreground: hsl(211, 100%, 99%);
+  --secondary: hsl(240, 3.7%, 15.9%);
+  --secondary-foreground: hsl(0, 0%, 98%);
+  --accent: hsl(240, 3.7%, 15.9%);
+  --accent-foreground: hsl(0, 0%, 98%);
+  --destructive: hsl(0, 62.8%, 30.6%);
+  --destructive-foreground: hsl(0, 0%, 98%);
+  --ring: hsl(240, 4.9%, 83.9%);
+  --radius: 0.5rem;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  .text-teal-primary {
+    color: var(--teal-primary);
+  }
+  
+  .text-teal-dark {
+    color: var(--teal-dark);
+  }
+  
+  .text-blue-primary {
+    color: var(--blue-primary);
+  }
+  
+  .text-blue-light {
+    color: var(--blue-light);
+  }
+  
+  .text-red-accent {
+    color: var(--red-accent);
+  }
+  
+  .text-red-light {
+    color: var(--red-light);
+  }
+  
+  .text-navy-dark {
+    color: var(--navy-dark);
+  }
+  
+  .bg-teal-primary {
+    background-color: var(--teal-primary);
+  }
+  
+  .bg-teal-dark {
+    background-color: var(--teal-dark);
+  }
+  
+  .bg-blue-primary {
+    background-color: var(--blue-primary);
+  }
+  
+  .bg-blue-light {
+    background-color: var(--blue-light);
+  }
+  
+  .bg-red-accent {
+    background-color: var(--red-accent);
+  }
+  
+  .bg-red-light {
+    background-color: var(--red-light);
+  }
+  
+  .bg-navy-dark {
+    background-color: var(--navy-dark);
+  }
+  
+  .border-teal-primary {
+    border-color: var(--teal-primary);
+  }
+  
+  .border-blue-primary {
+    border-color: var(--blue-primary);
+  }
+  
+  .border-red-accent {
+    border-color: var(--red-accent);
+  }
+  
+  .hover\:bg-teal-dark:hover {
+    background-color: var(--teal-dark);
+  }
+  
+  .hover\:bg-blue-light:hover {
+    background-color: var(--blue-light);
+  }
+  
+  .hover\:bg-red-light:hover {
+    background-color: var(--red-light);
+  }
+  
+  .hover\:text-teal-primary:hover {
+    color: var(--teal-primary);
+  }
+  
+  .hover\:text-teal-dark:hover {
+    color: var(--teal-dark);
+  }
+  
+  .hover\:text-blue-primary:hover {
+    color: var(--blue-primary);
+  }
+  
+  .hover\:text-red-light:hover {
+    color: var(--red-light);
+  }
+}

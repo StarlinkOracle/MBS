@@ -1,0 +1,15 @@
+{
+  "stableId": "contract_redline_generate_skill_v1_1",
+  "title": "Generate redline from contract input",
+  "requestIdPolicy": {
+    "mode": "DETERMINISTIC",
+    "includeCorrelationId": true
+  },
+  "toolSequence": [
+    {
+      "stableId": "generate_redline",
+      "toolName": "contract.redline.generate",
+      "requestIdField": "requestId"
+    }
+  ]
+}

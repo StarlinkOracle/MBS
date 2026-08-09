@@ -1,0 +1,5 @@
+[
+  "customer.fullName",
+  "invoice.daysDue",
+  "job.addressLine1"
+]

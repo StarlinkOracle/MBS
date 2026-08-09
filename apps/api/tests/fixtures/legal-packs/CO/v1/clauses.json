@@ -1,0 +1,24 @@
+[
+  {
+    "stableId": "co_payment_terms",
+    "version": 1,
+    "jurisdiction": "CO",
+    "title": "Payment Terms",
+    "bodyText": "Customer {{customer.fullName}} agrees to remit payment within {{invoice.daysDue}} days.",
+    "publish": true,
+    "metadata": {
+      "section": "billing"
+    }
+  },
+  {
+    "stableId": "co_warranty_notice",
+    "version": 1,
+    "jurisdiction": "CO",
+    "title": "Warranty Notice",
+    "bodyText": "Coverage applies only to equipment at {{job.addressLine1}} and requires maintenance per manufacturer policy.",
+    "publish": false,
+    "metadata": {
+      "section": "warranty"
+    }
+  }
+]

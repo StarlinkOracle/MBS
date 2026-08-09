@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["templateStableId", "version", "jurisdiction", "name", "structureJson"],
+    "properties": {
+      "templateStableId": { "type": "string", "minLength": 1 },
+      "version": { "type": "integer", "minimum": 1 },
+      "jurisdiction": { "type": "string", "minLength": 1 },
+      "name": { "type": "string", "minLength": 1 },
+      "bodyText": { "type": "string" },
+      "clauseStableIds": {
+        "type": "array",
+        "items": { "type": "string", "minLength": 1 }
+      },
+      "structureJson": { "type": "object" },
+      "metadata": { "type": "object" },
+      "publish": { "type": "boolean" }
+    },
+    "additionalProperties": true
+  }
+}

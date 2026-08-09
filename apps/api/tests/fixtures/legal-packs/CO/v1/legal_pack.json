@@ -1,0 +1,11 @@
+{
+  "packStableId": "CO_V1",
+  "name": "Colorado Residential HVAC Legal Pack",
+  "jurisdiction": "CO",
+  "version": "1.0.0",
+  "publishDefaults": false,
+  "metadata": {
+    "source": "Artifacts-Legal-Packs",
+    "notes": "Fixture snapshot for deterministic importer tests"
+  }
+}

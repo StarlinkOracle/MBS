@@ -1,0 +1,9 @@
+{
+  "packId": "mbs_agent_v1",
+  "version": "1.0.0",
+  "tools": [
+    { "toolName": "contract.redline.generate", "title": "Generate redline" },
+    { "toolName": "contract.draft.generatePdf", "title": "Generate PDF" },
+    { "toolName": "contract.references.extract", "title": "Extract references" }
+  ]
+}

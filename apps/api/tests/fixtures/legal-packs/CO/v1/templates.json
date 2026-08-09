@@ -1,0 +1,31 @@
+[
+  {
+    "templateStableId": "co_install_contract_standard",
+    "version": 1,
+    "jurisdiction": "CO",
+    "name": "Colorado Install Contract",
+    "bodyText": "This agreement is between {{customer.fullName}} and Russell Comfort Solutions.",
+    "clauseStableIds": [
+      "co_payment_terms",
+      "co_warranty_notice"
+    ],
+    "structureJson": {
+      "sections": [
+        {
+          "id": "intro",
+          "title": "Agreement",
+          "content": "Property: {{job.addressLine1}}"
+        },
+        {
+          "id": "signature",
+          "title": "Acceptance",
+          "content": "Signed by {{customer.fullName}}"
+        }
+      ]
+    },
+    "publish": true,
+    "metadata": {
+      "templateFamily": "install"
+    }
+  }
+]

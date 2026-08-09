@@ -1,0 +1,13 @@
+{
+  "stableId": "admin_template_publish_stub_skill_v1_1",
+  "title": "Template publish spec placeholder",
+  "toolSequence": [
+    {
+      "stableId": "spec_placeholder_step",
+      "toolName": "contract.redline.generate",
+      "payload": {
+        "mode": "spec-placeholder"
+      }
+    }
+  ]
+}

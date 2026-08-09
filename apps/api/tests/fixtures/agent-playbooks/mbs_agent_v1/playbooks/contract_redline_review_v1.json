@@ -1,0 +1,8 @@
+{
+  "stableId": "contract_redline_review_v1",
+  "title": "Contract redline review v1",
+  "status": "READY",
+  "requiresTools": [],
+  "skillSequence": ["contract_redline_skill_v1"],
+  "resultSchemaId": "results.schema.json"
+}
