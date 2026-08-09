@@ -1,0 +1,33 @@
+name: Export HVAC feature source
+
+on:
+  push:
+    branches:
+      - feature/hvac-diagnostic-pwa
+    paths:
+      - '.github/workflows/export-hvac-source.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/hvac-diagnostic-pwa
+      - name: Package source
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar --exclude='.git' --exclude='MBS_FULL_REPO_BUNDLE.zip' -czf /tmp/mbs-hvac-source.tar.gz .
+      - name: Upload source artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mbs-hvac-source
+          path: /tmp/mbs-hvac-source.tar.gz
+          retention-days: 1
+          if-no-files-found: error
