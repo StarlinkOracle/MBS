@@ -1,0 +1,57 @@
+name: Salvage complete HVAC new files
+
+on:
+  push:
+    branches:
+      - feature/hvac-diagnostic-pwa
+    paths:
+      - '.github/workflows/salvage-hvac-new-files.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  salvage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/hvac-diagnostic-pwa
+          fetch-depth: 0
+
+      - name: Recover and apply complete patch blocks
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .github/hvac-new.patch.part* | base64 --decode > /tmp/hvac-new.patch.xz
+          set +e
+          xz --decompress --stdout /tmp/hvac-new.patch.xz > /tmp/hvac-new.partial.patch 2>/tmp/xz-error.txt
+          set -e
+
+          last_diff_line=$(grep -n '^diff --git ' /tmp/hvac-new.partial.patch | tail -1 | cut -d: -f1)
+          test -n "${last_diff_line}"
+          test "${last_diff_line}" -gt 1
+          head -n "$((last_diff_line - 1))" /tmp/hvac-new.partial.patch > /tmp/hvac-new.complete.patch
+
+          git apply --check /tmp/hvac-new.complete.patch
+          git apply /tmp/hvac-new.complete.patch
+
+          rm -f \
+            .github/hvac-new.patch.part00 \
+            .github/hvac-new.patch.part01 \
+            .github/hvac-new.partial.patch \
+            .github/hvac-new.patch.inspection.md \
+            .github/workflows/inspect-hvac-new-files.yml \
+            .github/workflows/salvage-hvac-new-files.yml
+
+      - name: Commit recovered module files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat: add HVAC diagnostic API foundation'
+          git push origin HEAD:feature/hvac-diagnostic-pwa
