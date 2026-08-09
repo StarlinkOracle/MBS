@@ -38,13 +38,15 @@ jobs:
           git apply --check /tmp/hvac-new.complete.patch
           git apply /tmp/hvac-new.complete.patch
 
+          # The Actions token cannot create workflow files. Keep those for a
+          # connector-authored commit and salvage the application files here.
           rm -f \
+            .github/workflows/generate-hvac-migration.yml \
+            .github/workflows/hvac-diagnostic-ci.yml \
             .github/hvac-new.patch.part00 \
             .github/hvac-new.patch.part01 \
             .github/hvac-new.partial.patch \
-            .github/hvac-new.patch.inspection.md \
-            .github/workflows/inspect-hvac-new-files.yml \
-            .github/workflows/salvage-hvac-new-files.yml
+            .github/hvac-new.patch.inspection.md
 
       - name: Commit recovered module files
         shell: bash
