@@ -1,0 +1,59 @@
+name: Inspect HVAC new-file patch
+
+on:
+  push:
+    branches:
+      - feature/hvac-diagnostic-pwa
+    paths:
+      - '.github/hvac-new-files.patch.b64.part-*'
+      - '.github/workflows/inspect-hvac-new-files.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/hvac-diagnostic-pwa
+          fetch-depth: 0
+
+      - name: Decode and validate patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .github/hvac-new-files.patch.b64.part-* | base64 --decode > /tmp/hvac-new-files.patch
+          git apply --check /tmp/hvac-new-files.patch
+          {
+            echo '# HVAC new-file patch inspection'
+            echo
+            echo "Generated: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo
+            echo '## Patch statistics'
+            echo '```text'
+            git apply --stat /tmp/hvac-new-files.patch
+            echo '```'
+            echo
+            echo '## Files in patch'
+            echo '```text'
+            grep '^diff --git ' /tmp/hvac-new-files.patch | sed -E 's#^diff --git a/([^ ]+) b/.*#\1#'
+            echo '```'
+          } > .github/hvac-new-files.patch.inspection.md
+
+      - name: Commit inspection
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/hvac-new-files.patch.inspection.md
+          if git diff --cached --quiet; then
+            echo 'No inspection changes to commit.'
+            exit 0
+          fi
+          git commit -m 'chore: inspect HVAC new-file patch'
+          git push origin HEAD:feature/hvac-diagnostic-pwa
