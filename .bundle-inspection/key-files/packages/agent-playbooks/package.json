@@ -1,0 +1,16 @@
+{
+  "name": "@rcs/agent-playbooks",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@rcs/tool-registry": "*",
+    "ajv": "^8.17.1"
+  }
+}
