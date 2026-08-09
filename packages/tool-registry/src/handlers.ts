@@ -90,6 +90,7 @@ import {
   extractEquipmentCatalogRows,
   type EquipmentCatalogMapping,
 } from './equipment-catalog.js';
+import { createHvacDiagnosticHandlers } from './hvac-diagnostics.js';
 import {
   applyTimeWindowOverlay,
   checkMaxRiskLevelAutonomous,
@@ -14094,5 +14095,8 @@ function buildCoreHandlers(prisma: PrismaClient): HandlerMap {
 }
 
 export function createHandlerMap(prisma: PrismaClient): HandlerMap {
-  return buildCoreHandlers(prisma);
+  return {
+    ...buildCoreHandlers(prisma),
+    ...createHvacDiagnosticHandlers(prisma),
+  };
 }

@@ -10,3 +10,11 @@ export type {
   ToolHandler,
   HandlerMap,
 } from './types.js';
+
+export {
+  buildCurrentHvacReport,
+  buildHvacSnapshotFromDetail,
+  loadApplicableHvacReferencesForSession,
+  loadHvacDiagnosticSessionDetail,
+  lookupHvacOemReferences,
+} from './hvac-diagnostics.js';

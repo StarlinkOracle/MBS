@@ -46,3 +46,33 @@ export type {
   MobileSyncPushResponse,
   MobileSyncPushResult,
 } from './mobile-sync-contract.js';
+
+export {
+  HVAC_CALCULATION_VERSION,
+  HVAC_MEASUREMENT_DEFINITIONS,
+  buildDeterministicHvacAssistantReply,
+  buildHvacDiagnosticReportSnapshot,
+  calculateHvacDerivedMeasurements,
+  canonicalizeHvacMeasurement,
+  compareHvacValueToReference,
+  evaluateHvacDiagnosticSnapshot,
+  getHvacNextStep,
+  latestHvacMeasurements,
+  parseHvacBoolean,
+} from './hvac-diagnostics.js';
+
+export type {
+  CanonicalHvacMeasurement,
+  HvacDerivedMeasurement,
+  HvacDiagnosticSnapshot,
+  HvacFindingDraft,
+  HvacFindingSupport,
+  HvacMeasurementCategory,
+  HvacMeasurementDefinition,
+  HvacMeasurementInput,
+  HvacMeasurementStage,
+  HvacNextStep,
+  HvacOemReferenceLike,
+  HvacOperatingMode,
+} from './hvac-diagnostics.js';
+

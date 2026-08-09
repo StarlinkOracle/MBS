@@ -167,6 +167,7 @@ See `docs/INTEGRATIONS.md` for integration contracts and endpoint details.
 - `docs/LEGAL_PACKS_IMPORT.md`
 - `docs/OPERATIONS_HARDENING.md`
 - `docs/INTEGRATIONS.md`
+- `docs/HVAC_DIAGNOSTIC_PWA.md`
 
 ## Integration and External Repos
 
@@ -178,6 +179,7 @@ This monorepo integrates with external artifacts and pack repos without runtime 
 
 Integration details and governance constraints are documented in:
 - `docs/INTEGRATIONS.md`
+- `docs/HVAC_DIAGNOSTIC_PWA.md`
 
 ## Safety Notes
 

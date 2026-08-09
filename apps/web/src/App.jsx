@@ -19,6 +19,7 @@ import { DispatchPage } from "./pages/DispatchPage";
 import { ServicePricingAdminPage } from "./pages/ServicePricingAdminPage";
 import { InboxPage } from "./pages/InboxPage";
 import { DraftsPage } from "./pages/DraftsPage";
+import { HvacDiagnosticPage } from "./pages/HvacDiagnosticPage";
 import { CommandPalette } from "./components/CommandPalette";
 
 const theme = {
@@ -80,6 +81,21 @@ const ROUTES = [
     label: "Governance",
     requiredAny: ["system:killswitch:write", "system:*", "*"],
     subtitle: "Kill switch, policy profile, and daily financial exposure.",
+  },
+  {
+    id: "hvac-diagnostics",
+    path: "/diagnostics",
+    label: "Service Diagnostic",
+    requiredAny: ["hvac:diagnostic:read", "hvac:diagnostic:write", "*"],
+    subtitle: "Conversational, evidence-based HVAC diagnostics linked to CRM jobs and equipment.",
+  },
+  {
+    id: "hvac-diagnostic-detail",
+    path: "/diagnostics/:id",
+    label: "Service Diagnostic",
+    nav: false,
+    requiredAny: ["hvac:diagnostic:read", "hvac:diagnostic:write", "*"],
+    subtitle: "Mobile-first guided diagnostic session.",
   },
   {
     id: "dispatch",
@@ -217,6 +233,7 @@ const ACTOR_OPTIONS = [
   { label: "Owner Admin", email: "admin@russellcomfort.com" },
   { label: "Ops Manager", email: "manager@russellcomfort.com" },
   { label: "Sales Rep", email: "sales@russellcomfort.com" },
+  { label: "Service Technician", email: "tech@russellcomfort.com" },
   { label: "Master Agent", email: "master-agent@system.russellcomfort.local" },
 ];
 
@@ -414,6 +431,23 @@ const MainApp = () => {
         return <AgentRunsPage theme={theme} />;
       case "agent-graph":
         return <AgentGraphPage theme={theme} />;
+      case "hvac-diagnostics":
+        return (
+          <HvacDiagnosticPage
+            navigate={navigate}
+            hasPermission={hasPermission}
+            user={user}
+          />
+        );
+      case "hvac-diagnostic-detail":
+        return (
+          <HvacDiagnosticPage
+            sessionId={params.id}
+            navigate={navigate}
+            hasPermission={hasPermission}
+            user={user}
+          />
+        );
       case "dispatch":
         return <DispatchPage theme={theme} navigate={navigate} />;
       case "inbox":
@@ -495,6 +529,10 @@ const MainApp = () => {
       setSwitchingEmail("");
     }
   };
+
+  if (activeRoute?.id === "hvac-diagnostics" || activeRoute?.id === "hvac-diagnostic-detail") {
+    return renderCurrentPage();
+  }
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: theme.colors.navy, color: theme.colors.white, fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif" }}>

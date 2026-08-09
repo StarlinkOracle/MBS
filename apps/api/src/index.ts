@@ -95,6 +95,7 @@ import {
   loadPlaybookFailClosedConfig,
 } from './playbook-governance-gate.js';
 import { buildPhotoDerivatives } from './media-processing.js';
+import { registerHvacDiagnosticRoutes } from './hvac-diagnostic-routes.js';
 import {
   advanceStreamCursor,
   applyLastEventIdCursor,
@@ -15077,6 +15078,15 @@ app.get('/api/stream', async (req, res) => {
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(status).json({ error: message });
   }
+});
+
+registerHvacDiagnosticRoutes({
+  app,
+  prisma,
+  registry,
+  getOrgId,
+  requireAnyPermission,
+  executionStatusCode,
 });
 
 const isDirectExecution =

@@ -409,6 +409,41 @@ enum TimeEditRequestStatus {
   REJECTED
 }
 
+
+enum HvacDiagnosticSessionStatus {
+  DRAFT
+  IN_PROGRESS
+  READY_FOR_REVIEW
+  COMPLETED
+  INCONCLUSIVE
+  CANCELLED
+}
+
+enum HvacDiagnosticMessageRole {
+  SYSTEM
+  ASSISTANT
+  TECHNICIAN
+}
+
+enum HvacMeasurementStage {
+  INITIAL
+  BEFORE_REPAIR
+  AFTER_REPAIR
+}
+
+enum HvacOemMatchLevel {
+  EXACT_MODEL
+  MODEL_FAMILY
+  SERIES
+  GENERIC
+  NONE
+}
+
+enum HvacDiagnosticReportKind {
+  TECHNICAL
+  CUSTOMER
+}
+
 model Organization {
   id                       String                    @id @default(cuid())
   name                     String
@@ -494,6 +529,17 @@ model Organization {
   mobileSyncCursors        MobileSyncCursor[]
   timeEntries              TimeEntry[]
   timeEditRequests         TimeEditRequest[]
+  hvacEquipmentSystems     HvacEquipmentSystem[]
+  hvacEquipmentComponents  HvacEquipmentComponent[]
+  hvacOemDocuments         HvacOemDocument[]
+  hvacOemReferences        HvacOemReference[]
+  hvacDiagnosticSessions   HvacDiagnosticSession[]
+  hvacDiagnosticMessages   HvacDiagnosticMessage[]
+  hvacMeasurements         HvacDiagnosticMeasurement[]
+  hvacDerivedMeasurements  HvacDiagnosticDerivedMeasurement[]
+  hvacFindings             HvacDiagnosticFinding[]
+  hvacVerifications        HvacDiagnosticVerification[]
+  hvacReports              HvacDiagnosticReport[]
 }
 
 model User {
@@ -543,6 +589,13 @@ model User {
   timeEditRequests           TimeEditRequest[]    @relation("TimeEditRequestRequestedBy")
   reviewedTimeEditRequests   TimeEditRequest[]    @relation("TimeEditRequestReviewedBy")
   mobileSyncCursors          MobileSyncCursor[]
+  hvacDiagnosticSessions     HvacDiagnosticSession[]      @relation("HvacDiagnosticTechnician")
+  hvacConfirmedSessions      HvacDiagnosticSession[]      @relation("HvacDiagnosticConfirmedBy")
+  hvacDiagnosticMessages     HvacDiagnosticMessage[]      @relation("HvacDiagnosticMessageCreatedBy")
+  hvacMeasurementsRecorded   HvacDiagnosticMeasurement[]  @relation("HvacMeasurementRecordedBy")
+  hvacOemReferencesReviewed  HvacOemReference[]           @relation("HvacOemReferenceReviewedBy")
+  hvacVerificationsConfirmed HvacDiagnosticVerification[] @relation("HvacVerificationConfirmedBy")
+  hvacReportsGenerated       HvacDiagnosticReport[]       @relation("HvacReportGeneratedBy")
 
   @@unique([orgId, email])
   @@unique([orgId, employeeCode])
@@ -1032,6 +1085,8 @@ model Customer {
   reviewRequests           ReviewRequest[]
   referralEventsAsReferrer ReferralEvent[]      @relation("ReferralEventReferrerCustomer")
   referralEventsAsReferred ReferralEvent[]      @relation("ReferralEventReferredCustomer")
+  hvacEquipmentSystems     HvacEquipmentSystem[]
+  hvacDiagnosticSessions   HvacDiagnosticSession[]
 
   @@index([orgId, fullName])
 }
@@ -1360,6 +1415,7 @@ model AttachmentRef {
   priceMatchRequests      PriceMatchRequest[]
   equipmentCatalogSources EquipmentCatalogSource[]
   assessmentAttachments   AssessmentAttachment[]
+  hvacOemDocuments         HvacOemDocument[]
 
   @@index([orgId, createdAt])
 }
@@ -1709,9 +1765,294 @@ model Job {
   reviewRequests   ReviewRequest[]
   appointments     Appointment[]
   timeEntries      TimeEntry[]
+  hvacDiagnosticSessions HvacDiagnosticSession[]
 
   @@index([orgId, status])
   @@index([customerId])
+}
+
+
+model HvacEquipmentSystem {
+  id                 String                    @id @default(cuid())
+  orgId              String
+  customerId         String?
+  label              String
+  systemType         String
+  location           String?
+  installDate        DateTime?
+  notes              String?
+  metadata           Json?
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+  organization       Organization              @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  customer           Customer?                 @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  components         HvacEquipmentComponent[]
+  diagnosticSessions HvacDiagnosticSession[]
+
+  @@index([orgId, customerId, createdAt])
+  @@index([orgId, systemType])
+}
+
+model HvacEquipmentComponent {
+  id                String                      @id @default(cuid())
+  orgId             String
+  equipmentSystemId String
+  componentType     String
+  manufacturer      String?
+  model             String?
+  serial            String?
+  refrigerant       String?
+  meteringDevice    String?
+  voltage           String?
+  phase             String?
+  installDate       DateTime?
+  source            String                      @default("MANUAL")
+  specsJson         Json?
+  createdAt         DateTime                    @default(now())
+  updatedAt         DateTime                    @updatedAt
+  organization      Organization                @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  equipmentSystem   HvacEquipmentSystem         @relation(fields: [equipmentSystemId], references: [id], onDelete: Cascade)
+  measurements      HvacDiagnosticMeasurement[]
+
+  @@index([orgId, equipmentSystemId, componentType])
+  @@index([orgId, manufacturer, model])
+  @@index([orgId, serial])
+}
+
+model HvacOemDocument {
+  id              String             @id @default(cuid())
+  orgId           String
+  manufacturer    String
+  title           String
+  documentNumber  String?
+  revision        String?
+  publishedAt     DateTime?
+  attachmentRefId String?
+  sourceUrl       String?
+  status          String             @default("ACTIVE")
+  metadata        Json?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  organization    Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  attachmentRef   AttachmentRef?     @relation(fields: [attachmentRefId], references: [id], onDelete: SetNull)
+  references      HvacOemReference[]
+
+  @@index([orgId, manufacturer, status])
+  @@index([orgId, documentNumber, revision])
+  @@index([attachmentRefId])
+}
+
+model HvacOemReference {
+  id                     String                     @id @default(cuid())
+  orgId                  String
+  documentId             String
+  manufacturer           String
+  modelPattern           String
+  matchLevel             HvacOemMatchLevel
+  equipmentComponentType String?
+  operatingMode          String?
+  refrigerant            String?
+  metricKey              String
+  targetValue            Float?
+  minValue               Float?
+  maxValue               Float?
+  tolerance              Float?
+  unit                   String?
+  conditionsJson         Json?
+  pageNumber             String?
+  notes                  String?
+  reviewedByUserId       String?
+  reviewedAt             DateTime?
+  createdAt              DateTime                   @default(now())
+  updatedAt              DateTime                   @updatedAt
+  organization           Organization               @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  document               HvacOemDocument             @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  reviewedByUser         User?                       @relation("HvacOemReferenceReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  findings               HvacDiagnosticFinding[]
+
+  @@index([orgId, manufacturer, modelPattern, metricKey])
+  @@index([orgId, operatingMode, refrigerant, metricKey])
+  @@index([documentId])
+}
+
+model HvacDiagnosticSession {
+  id                     String                      @id @default(cuid())
+  orgId                  String
+  jobId                  String?
+  customerId             String?
+  equipmentSystemId      String?
+  technicianUserId       String?
+  status                 HvacDiagnosticSessionStatus @default(DRAFT)
+  complaintText          String?
+  operatingMode          String?
+  altitudeFt             Float?
+  stateJson              Json?
+  summaryJson            Json?
+  finalDiagnosis         String?
+  finalDiagnosisJson     Json?
+  confirmedByUserId      String?
+  confirmedAt            DateTime?
+  startedAt              DateTime                    @default(now())
+  completedAt            DateTime?
+  createdAt              DateTime                    @default(now())
+  updatedAt              DateTime                    @updatedAt
+  organization           Organization                @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  job                    Job?                        @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  customer               Customer?                   @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  equipmentSystem        HvacEquipmentSystem?        @relation(fields: [equipmentSystemId], references: [id], onDelete: SetNull)
+  technician             User?                       @relation("HvacDiagnosticTechnician", fields: [technicianUserId], references: [id], onDelete: SetNull)
+  confirmedBy            User?                       @relation("HvacDiagnosticConfirmedBy", fields: [confirmedByUserId], references: [id], onDelete: SetNull)
+  messages               HvacDiagnosticMessage[]
+  measurements           HvacDiagnosticMeasurement[]
+  derivedMeasurements    HvacDiagnosticDerivedMeasurement[]
+  findings               HvacDiagnosticFinding[]
+  verifications          HvacDiagnosticVerification[]
+  reports                HvacDiagnosticReport[]
+
+  @@index([orgId, status, updatedAt])
+  @@index([orgId, jobId])
+  @@index([orgId, customerId])
+  @@index([orgId, technicianUserId, startedAt])
+}
+
+model HvacDiagnosticMessage {
+  id              String                    @id @default(cuid())
+  orgId           String
+  sessionId       String
+  role            HvacDiagnosticMessageRole
+  text            String
+  structuredJson  Json?
+  provider        String?
+  providerModel   String?
+  createdByUserId String?
+  createdAt       DateTime                  @default(now())
+  organization    Organization              @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  session         HvacDiagnosticSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  createdByUser   User?                     @relation("HvacDiagnosticMessageCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, sessionId, createdAt])
+}
+
+model HvacDiagnosticMeasurement {
+  id                  String                 @id @default(cuid())
+  orgId               String
+  sessionId           String
+  equipmentComponentId String?
+  measurementKey      String
+  label               String?
+  value               Float?
+  unit                String?
+  textValue           String?
+  canonicalValue      Float?
+  canonicalUnit       String?
+  stage               HvacMeasurementStage   @default(INITIAL)
+  source              String                 @default("MANUAL")
+  verified            Boolean                @default(false)
+  instrument          String?
+  notes               String?
+  operatingConditions Json?
+  metadata            Json?
+  recordedByUserId    String?
+  recordedAt          DateTime               @default(now())
+  createdAt           DateTime               @default(now())
+  organization        Organization           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  session             HvacDiagnosticSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  equipmentComponent  HvacEquipmentComponent? @relation(fields: [equipmentComponentId], references: [id], onDelete: SetNull)
+  recordedByUser      User?                  @relation("HvacMeasurementRecordedBy", fields: [recordedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, sessionId, stage, recordedAt])
+  @@index([orgId, sessionId, measurementKey, recordedAt])
+  @@index([equipmentComponentId])
+}
+
+model HvacDiagnosticDerivedMeasurement {
+  id                  String                @id @default(cuid())
+  orgId               String
+  sessionId           String
+  measurementKey      String
+  label               String
+  value               Float
+  unit                String
+  stage               HvacMeasurementStage  @default(INITIAL)
+  inputMeasurementIds Json
+  calculationVersion  String
+  calculatedAt        DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  organization        Organization          @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  session             HvacDiagnosticSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, stage, measurementKey])
+  @@index([orgId, sessionId, stage])
+}
+
+model HvacDiagnosticFinding {
+  id                        String                @id @default(cuid())
+  orgId                     String
+  sessionId                 String
+  stage                     HvacMeasurementStage  @default(INITIAL)
+  code                      String
+  title                     String
+  severity                  String
+  supportLevel              String
+  sourceType                String
+  summary                   String
+  evidenceJson              Json
+  contradictoryEvidenceJson Json
+  missingEvidenceJson       Json
+  nextTestJson              Json?
+  oemReferenceId            String?
+  status                    String                @default("OPEN")
+  createdAt                 DateTime              @default(now())
+  updatedAt                 DateTime              @updatedAt
+  organization              Organization          @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  session                   HvacDiagnosticSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  oemReference              HvacOemReference?     @relation(fields: [oemReferenceId], references: [id], onDelete: SetNull)
+  verifications             HvacDiagnosticVerification[]
+
+  @@unique([sessionId, stage, code])
+  @@index([orgId, sessionId, severity, status])
+  @@index([oemReferenceId])
+}
+
+model HvacDiagnosticVerification {
+  id                String                 @id @default(cuid())
+  orgId             String
+  sessionId         String
+  findingId         String?
+  title             String
+  procedure         String
+  expectedJson      Json?
+  actualJson        Json?
+  outcome           String?
+  notes             String?
+  confirmedByUserId String?
+  confirmedAt       DateTime?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  organization      Organization           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  session           HvacDiagnosticSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  finding           HvacDiagnosticFinding? @relation(fields: [findingId], references: [id], onDelete: SetNull)
+  confirmedByUser   User?                  @relation("HvacVerificationConfirmedBy", fields: [confirmedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, sessionId, createdAt])
+  @@index([findingId])
+}
+
+model HvacDiagnosticReport {
+  id                String                   @id @default(cuid())
+  orgId             String
+  sessionId         String
+  kind              HvacDiagnosticReportKind
+  reportJson        Json
+  generatedByUserId String?
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  organization      Organization             @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  session           HvacDiagnosticSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  generatedByUser   User?                    @relation("HvacReportGeneratedBy", fields: [generatedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([sessionId, kind])
+  @@index([orgId, sessionId, createdAt])
 }
 
 model TimeEntry {
