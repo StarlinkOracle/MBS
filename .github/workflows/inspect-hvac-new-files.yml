@@ -22,26 +22,40 @@ jobs:
           ref: feature/hvac-diagnostic-pwa
           fetch-depth: 0
 
-      - name: Decode and validate patch
+      - name: Decode available patch bytes
         shell: bash
         run: |
           set -euo pipefail
           cat .github/hvac-new.patch.part* | base64 --decode > /tmp/hvac-new.patch.xz
-          xz --decompress --stdout /tmp/hvac-new.patch.xz > /tmp/hvac-new.patch
-          git apply --check /tmp/hvac-new.patch
+          set +e
+          xz --decompress --stdout /tmp/hvac-new.patch.xz > /tmp/hvac-new.partial.patch 2> /tmp/xz-error.txt
+          xz_status=$?
+          set -e
           {
-            echo '# HVAC new-file patch inspection'
+            echo '# HVAC staged patch inspection'
             echo
             echo "Generated: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
             echo
-            echo '## Patch statistics'
+            echo "XZ status: ${xz_status}"
+            echo
+            echo '## Decoder output'
             echo '```text'
-            git apply --stat /tmp/hvac-new.patch
+            cat /tmp/xz-error.txt
             echo '```'
             echo
-            echo '## Files in patch'
+            echo '## Recovered patch bytes'
             echo '```text'
-            grep '^diff --git ' /tmp/hvac-new.patch | sed -E 's#^diff --git a/([^ ]+) b/.*#\1#'
+            wc -c /tmp/hvac-new.partial.patch
+            echo '```'
+            echo
+            echo '## Recovered file paths'
+            echo '```text'
+            grep '^diff --git ' /tmp/hvac-new.partial.patch | sed -E 's#^diff --git a/([^ ]+) b/.*#\1#' || true
+            echo '```'
+            echo
+            echo '## Recovered patch header'
+            echo '```diff'
+            sed -n '1,240p' /tmp/hvac-new.partial.patch
             echo '```'
           } > .github/hvac-new.patch.inspection.md
 
@@ -56,5 +70,5 @@ jobs:
             echo 'No inspection changes to commit.'
             exit 0
           fi
-          git commit -m 'chore: inspect HVAC new-file patch'
+          git commit -m 'chore: inspect available HVAC patch bytes'
           git push origin HEAD:feature/hvac-diagnostic-pwa
