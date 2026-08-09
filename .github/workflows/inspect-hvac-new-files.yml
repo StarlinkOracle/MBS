@@ -31,6 +31,7 @@ jobs:
           xz --decompress --stdout /tmp/hvac-new.patch.xz > /tmp/hvac-new.partial.patch 2> /tmp/xz-error.txt
           xz_status=$?
           set -e
+          cp /tmp/hvac-new.partial.patch .github/hvac-new.partial.patch
           {
             echo '# HVAC staged patch inspection'
             echo
@@ -52,11 +53,6 @@ jobs:
             echo '```text'
             grep '^diff --git ' /tmp/hvac-new.partial.patch | sed -E 's#^diff --git a/([^ ]+) b/.*#\1#' || true
             echo '```'
-            echo
-            echo '## Recovered patch header'
-            echo '```diff'
-            sed -n '1,240p' /tmp/hvac-new.partial.patch
-            echo '```'
           } > .github/hvac-new.patch.inspection.md
 
       - name: Commit inspection
@@ -65,10 +61,10 @@ jobs:
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .github/hvac-new.patch.inspection.md
+          git add .github/hvac-new.patch.inspection.md .github/hvac-new.partial.patch
           if git diff --cached --quiet; then
             echo 'No inspection changes to commit.'
             exit 0
           fi
-          git commit -m 'chore: inspect available HVAC patch bytes'
+          git commit -m 'chore: preserve recoverable HVAC patch content'
           git push origin HEAD:feature/hvac-diagnostic-pwa
