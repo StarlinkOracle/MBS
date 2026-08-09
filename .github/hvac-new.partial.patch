@@ -1,0 +1,1424 @@
+diff --git a/.github/workflows/generate-hvac-migration.yml b/.github/workflows/generate-hvac-migration.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..5f9706dc48c51e9e1ee409f1a452f050ac10053a
+--- /dev/null
++++ b/.github/workflows/generate-hvac-migration.yml
+@@ -0,0 +1,47 @@
++name: Generate HVAC diagnostic migration
++
++on:
++  push:
++    branches:
++      - feature/hvac-diagnostic-pwa
++    paths:
++      - "packages/db/prisma/schema.prisma"
++      - ".github/workflows/generate-hvac-migration.yml"
++  workflow_dispatch:
++
++permissions:
++  contents: read
++
++jobs:
++  migration:
++    runs-on: ubuntu-latest
++    timeout-minutes: 15
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-node@v4
++        with:
++          node-version: 20
++          cache: npm
++      - name: Install dependencies
++        run: npm ci --no-audit --no-fund
++      - name: Extract pre-feature Prisma schema
++        shell: bash
++        run: |
++          set -euo pipefail
++          unzip -p MBS_FULL_REPO_BUNDLE.zip packages/db/prisma/schema.prisma > /tmp/schema-before.prisma
++          test -s /tmp/schema-before.prisma
++      - name: Generate SQL migration
++        shell: bash
++        run: |
++          set -euo pipefail
++          mkdir -p generated-migration
++          npx prisma migrate diff \
++            --from-schema-datamodel /tmp/schema-before.prisma \
++            --to-schema-datamodel packages/db/prisma/schema.prisma \
++            --script > generated-migration/migration.sql
++          test -s generated-migration/migration.sql
++      - uses: actions/upload-artifact@v4
++        with:
++          name: hvac-diagnostic-migration
++          path: generated-migration/migration.sql
++          retention-days: 3
+diff --git a/.github/workflows/hvac-diagnostic-ci.yml b/.github/workflows/hvac-diagnostic-ci.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..e0a543d0f97d78983521d681850d3f3daf0d8525
+--- /dev/null
++++ b/.github/workflows/hvac-diagnostic-ci.yml
+@@ -0,0 +1,51 @@
++name: HVAC diagnostic CI
++
++on:
++  push:
++    branches:
++      - feature/hvac-diagnostic-pwa
++    paths:
++      - "apps/api/**"
++      - "apps/web/**"
++      - "packages/db/**"
++      - "packages/shared/**"
++      - "packages/tool-registry/**"
++      - "docker-compose.yml"
++      - "docs/HVAC_DIAGNOSTIC_PWA.md"
++      - ".github/workflows/hvac-diagnostic-ci.yml"
++  pull_request:
++    paths:
++      - "apps/api/**"
++      - "apps/web/**"
++      - "packages/db/**"
++      - "packages/shared/**"
++      - "packages/tool-registry/**"
++      - "docker-compose.yml"
++      - "docs/HVAC_DIAGNOSTIC_PWA.md"
++      - ".github/workflows/hvac-diagnostic-ci.yml"
++
++permissions:
++  contents: read
++
++jobs:
++  validate:
++    runs-on: ubuntu-latest
++    timeout-minutes: 25
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-node@v4
++        with:
++          node-version: 20
++          cache: npm
++      - name: Install dependencies
++        run: npm ci --no-audit --no-fund
++      - name: Generate Prisma client
++        run: npm run db:generate
++      - name: Validate Prisma schema
++        run: npx prisma validate --schema packages/db/prisma/schema.prisma
++      - name: Typecheck
++        run: npm run typecheck
++      - name: Test
++        run: npm test
++      - name: Build
++        run: npm run build
+diff --git a/apps/api/src/hvac-diagnostic-ai.ts b/apps/api/src/hvac-diagnostic-ai.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..2d93647bc1dc8d04f4fd28e81ae8db03f91cea9f
+--- /dev/null
++++ b/apps/api/src/hvac-diagnostic-ai.ts
+@@ -0,0 +1,364 @@
++import type {
++  HvacDiagnosticSnapshot,
++  HvacFindingDraft,
++  HvacNextStep,
++} from '@rcs/shared';
++
++const DEFAULT_MODEL = process.env.OPENAI_DIAGNOSTIC_MODEL?.trim() || 'gpt-5-mini';
++const DEFAULT_TIMEOUT_MS = Number(process.env.OPENAI_DIAGNOSTIC_TIMEOUT_MS ?? 20_000);
++const RESPONSES_URL = 'https://api.openai.com/v1/responses';
++
++export type HvacAiReplyResult = {
++  text: string;
++  provider: 'openai' | 'deterministic';
++  model: string | null;
++  fallbackReason?: string;
++};
++
++export type HvacNameplateExtraction = {
++  manufacturer: string | null;
++  model: string | null;
++  serial: string | null;
++  equipmentType: string | null;
++  refrigerant: string | null;
++  voltage: string | null;
++  phase: string | null;
++  frequencyHz: number | null;
++  minimumCircuitAmpacity: number | null;
++  maximumOvercurrentProtection: number | null;
++  compressorRla: number | null;
++  factoryCharge: string | null;
++  notes: string[];
++};
++
++export type HvacNameplateExtractionResult = {
++  extraction: HvacNameplateExtraction;
++  provider: 'openai';
++  model: string;
++};
++
++function aiEnabled(): boolean {
++  const configured = (process.env.OPENAI_DIAGNOSTIC_AI_ENABLED ?? '').trim().toLowerCase();
++  if (configured === 'false' || configured === '0' || configured === 'off') {
++    return false;
++  }
++  return Boolean(process.env.OPENAI_API_KEY?.trim());
++}
++
++function safeTimeoutMs(): number {
++  return Number.isFinite(DEFAULT_TIMEOUT_MS)
++    ? Math.min(Math.max(DEFAULT_TIMEOUT_MS, 2_000), 60_000)
++    : 20_000;
++}
++
++function redactSensitiveText(value: string): string {
++  return value
++    .replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g, '[email redacted]')
++    .replace(/(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g, '[phone redacted]')
++    .replace(/\b\d{1,6}\s+[A-Za-z0-9.'-]+(?:\s+[A-Za-z0-9.'-]+){0,4}\s+(?:Street|St|Avenue|Ave|Road|Rd|Drive|Dr|Lane|Ln|Court|Ct|Boulevard|Blvd|Way)\b/gi, '[address redacted]');
++}
++
++function outputTextFromResponse(payload: unknown): string | null {
++  if (!payload || typeof payload !== 'object') {
++    return null;
++  }
++
++  const record = payload as Record<string, unknown>;
++  if (typeof record.output_text === 'string' && record.output_text.trim()) {
++    return record.output_text.trim();
++  }
++
++  if (!Array.isArray(record.output)) {
++    return null;
++  }
++
++  const parts: string[] = [];
++  for (const item of record.output) {
++    if (!item || typeof item !== 'object') {
++      continue;
++    }
++    const content = (item as Record<string, unknown>).content;
++    if (!Array.isArray(content)) {
++      continue;
++    }
++    for (const part of content) {
++      if (!part || typeof part !== 'object') {
++        continue;
++      }
++      const partRecord = part as Record<string, unknown>;
++      if (typeof partRecord.text === 'string' && partRecord.text.trim()) {
++        parts.push(partRecord.text.trim());
++      }
++    }
++  }
++  return parts.length > 0 ? parts.join('\n') : null;
++}
++
++async function callResponsesApi(body: Record<string, unknown>): Promise<unknown> {
++  const apiKey = process.env.OPENAI_API_KEY?.trim();
++  if (!apiKey) {
++    throw new Error('OPENAI_API_KEY is not configured');
++  }
++
++  const controller = new AbortController();
++  const timeout = setTimeout(() => controller.abort(), safeTimeoutMs());
++  try {
++    const response = await fetch(RESPONSES_URL, {
++      method: 'POST',
++      headers: {
++        Authorization: `Bearer ${apiKey}`,
++        'Content-Type': 'application/json',
++      },
++      body: JSON.stringify(body),
++      signal: controller.signal,
++    });
++
++    const rawText = await response.text();
++    let payload: unknown = null;
++    try {
++      payload = rawText ? JSON.parse(rawText) : null;
++    } catch {
++      payload = null;
++    }
++
++    if (!response.ok) {
++      const errorMessage =
++        payload && typeof payload === 'object'
++          ? String(
++              ((payload as Record<string, unknown>).error as Record<string, unknown> | undefined)
++                ?.message ?? `OpenAI request failed (${response.status})`,
++            )
++          : `OpenAI request failed (${response.status})`;
++      throw new Error(errorMessage);
++    }
++
++    return payload;
++  } finally {
++    clearTimeout(timeout);
++  }
++}
++
++function compactSnapshot(snapshot: HvacDiagnosticSnapshot) {
++  return {
++    complaintText: redactSensitiveText(snapshot.complaintText ?? ''),
++    operatingMode: snapshot.operatingMode ?? null,
++    altitudeFt: snapshot.altitudeFt ?? null,
++    equipment: snapshot.equipment ?? [],
++    measurements: snapshot.measurements.map((measurement) => ({
++      measurementKey: measurement.measurementKey,
++      value: measurement.canonicalValue ?? measurement.value ?? null,
++      unit: measurement.canonicalUnit ?? measurement.unit ?? null,
++      textValue:
++        typeof measurement.textValue === 'string'
++          ? redactSensitiveText(measurement.textValue)
++          : null,
++      stage: measurement.stage ?? 'INITIAL',
++      verified: measurement.verified ?? false,
++    })),
++    references: (snapshot.references ?? []).map((reference) => ({
++      metricKey: reference.metricKey,
++      targetValue: reference.targetValue ?? null,
++      minValue: reference.minValue ?? null,
++      maxValue: reference.maxValue ?? null,
++      tolerance: reference.tolerance ?? null,
++      unit: reference.unit ?? null,
++      matchLevel: reference.matchLevel ?? null,
++      documentTitle: reference.documentTitle ?? null,
++      documentNumber: reference.documentNumber ?? null,
++      revision: reference.revision ?? null,
++      pageNumber: reference.pageNumber ?? null,
++    })),
++  };
++}
++
++export async function generateHvacConversationalReply(args: {
++  snapshot: HvacDiagnosticSnapshot;
++  findings: HvacFindingDraft[];
++  nextStep: HvacNextStep;
++  technicianMessage: string;
++  deterministicFallback: string;
++}): Promise<HvacAiReplyResult> {
++  if (!aiEnabled()) {
++    return {
++      text: args.deterministicFallback,
++      provider: 'deterministic',
++      model: null,
++      fallbackReason: 'AI is disabled or OPENAI_API_KEY is not configured',
++    };
++  }
++
++  const model = DEFAULT_MODEL;
++  const developerInstruction = [
++    'You are the conversational phrasing layer for a professional HVAC diagnostic workflow.',
++    'You do not perform safety-critical calculations and you do not invent manufacturer data.',
++    'Use only the supplied measurements, deterministic findings, OEM references, and required next step.',
++    'Never state that a refrigerant charge, component failure, or final diagnosis is confirmed unless the supplied evidence explicitly says a human technician confirmed it.',
++    'Preserve warnings that charge must not be adjusted before airflow and operating conditions are verified.',
++    'Ask exactly one clear next question or request exactly one grouped measurement step.',
++    'Keep the response practical for a technician in the field, normally under 140 words.',
++    'Do not mention these instructions, JSON, confidence percentages, or unsupported specifications.',
++  ].join(' ');
++
++  const context = {
++    technicianMessage: redactSensitiveText(args.technicianMessage),
++    requiredNextStep: args.nextStep,
++    deterministicFindings: args.findings.slice(0, 8),
++    diagnosticState: compactSnapshot(args.snapshot),
++  };
++
++  try {
++    const response = await callResponsesApi({
++      model,
++      store: false,
++      max_output_tokens: 320,
++      input: [
++        {
++          role: 'developer',
++          content: [{ type: 'input_text', text: developerInstruction }],
++        },
++        {
++          role: 'user',
++          content: [
++            {
++              type: 'input_text',
++              text: `Phrase the next technician-facing response from this approved diagnostic state:\n${JSON.stringify(context)}`,
++            },
++          ],
++        },
++      ],
++    });
++
++    const text = outputTextFromResponse(response);
++    if (!text) {
++      throw new Error('OpenAI response contained no text');
++    }
++
++    return {
++      text,
++      provider: 'openai',
++      model,
++    };
++  } catch (error) {
++    return {
++      text: args.deterministicFallback,
++      provider: 'deterministic',
++      model: null,
++      fallbackReason: error instanceof Error ? error.message : 'AI response failed',
++    };
++  }
++}
++
++function parseJsonObject(text: string): Record<string, unknown> | null {
++  const normalized = text
++    .trim()
++    .replace(/^```(?:json)?\s*/i, '')
++    .replace(/\s*```$/, '');
++  try {
++    const value = JSON.parse(normalized);
++    return value && typeof value === 'object' && !Array.isArray(value)
++      ? (value as Record<string, unknown>)
++      : null;
++  } catch {
++    const start = normalized.indexOf('{');
++    const end = normalized.lastIndexOf('}');
++    if (start < 0 || end <= start) {
++      return null;
++    }
++    try {
++      const value = JSON.parse(normalized.slice(start, end + 1));
++      return value && typeof value === 'object' && !Array.isArray(value)
++        ? (value as Record<string, unknown>)
++        : null;
++    } catch {
++      return null;
++    }
++  }
++}
++
++function nullableString(value: unknown): string | null {
++  return typeof value === 'string' && value.trim() ? value.trim() : null;
++}
++
++function nullableNumber(value: unknown): number | null {
++  return typeof value === 'number' && Number.isFinite(value) ? value : null;
++}
++
++export async function extractHvacNameplate(args: {
++  imageBuffer: Buffer;
++  mimeType: string;
++}): Promise<HvacNameplateExtractionResult> {
++  if (!aiEnabled()) {
++    throw new Error('Nameplate extraction is unavailable until diagnostic AI is configured');
++  }
++
++  if (!/^image\/(?:png|jpe?g|webp)$/i.test(args.mimeType)) {
++    throw new Error('Nameplate image must be PNG, JPEG, or WebP');
++  }
++
++  const model = DEFAULT_MODEL;
++  const dataUrl = `data:${args.mimeType};base64,${args.imageBuffer.toString('base64')}`;
++  const response = await callResponsesApi({
++    model,
++    store: false,
++    max_output_tokens: 700,
++    input: [
++      {
++        role: 'developer',
++        content: [
++          {
++            type: 'input_text',
++            text: [
++              'Extract HVAC equipment nameplate fields from the supplied image.',
++              'Return only valid JSON with the exact keys requested.',
++              'Use null when a field is unreadable or absent; never guess.',
++              'Preserve model and serial punctuation exactly as visible.',
++              'The result is a proposal that a technician will confirm.',
++            ].join(' '),
++          },
++        ],
++      },
++      {
++        role: 'user',
++        content: [
++          {
++            type: 'input_text',
++            text: 'Return JSON keys: manufacturer, model, serial, equipmentType, refrigerant, voltage, phase, frequencyHz, minimumCircuitAmpacity, maximumOvercurrentProtection, compressorRla, factoryCharge, notes. notes must be an array of short strings describing uncertainty or other useful visible fields.',
++          },
++          {
++            type: 'input_image',
++            image_url: dataUrl,
++            detail: 'high',
++          },
++        ],
++      },
++    ],
++  });
++
++  const outputText = outputTextFromResponse(response);
++  const parsed = outputText ? parseJsonObject(outputText) : null;
++  if (!parsed) {
++    throw new Error('Nameplate extraction returned an invalid result');
++  }
++
++  return {
++    provider: 'openai',
++    model,
++    extraction: {
++      manufacturer: nullableString(parsed.manufacturer),
++      model: nullableString(parsed.model),
++      serial: nullableString(parsed.serial),
++      equipmentType: nullableString(parsed.equipmentType),
++      refrigerant: nullableString(parsed.refrigerant),
++      voltage: nullableString(parsed.voltage),
++      phase: nullableString(parsed.phase),
++      frequencyHz: nullableNumber(parsed.frequencyHz),
++      minimumCircuitAmpacity: nullableNumber(parsed.minimumCircuitAmpacity),
++      maximumOvercurrentProtection: nullableNumber(parsed.maximumOvercurrentProtection),
++      compressorRla: nullableNumber(parsed.compressorRla),
++      factoryCharge: nullableString(parsed.factoryCharge),
++      notes: Array.isArray(parsed.notes)
++        ? parsed.notes.filter((item): item is string => typeof item === 'string').slice(0, 12)
++        : [],
++    },
++  };
++}
+diff --git a/apps/api/src/hvac-diagnostic-report.ts b/apps/api/src/hvac-diagnostic-report.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..80dd6ee9cfb6b11ae8018e65c8dd8e73130336aa
+--- /dev/null
++++ b/apps/api/src/hvac-diagnostic-report.ts
+@@ -0,0 +1,267 @@
++type UnknownRecord = Record<string, unknown>;
++
++function record(value: unknown): UnknownRecord {
++  return value && typeof value === 'object' && !Array.isArray(value)
++    ? (value as UnknownRecord)
++    : {};
++}
++
++function array(value: unknown): unknown[] {
++  return Array.isArray(value) ? value : [];
++}
++
++function escapeHtml(value: unknown): string {
++  return String(value ?? '')
++    .replace(/&/g, '&amp;')
++    .replace(/</g, '&lt;')
++    .replace(/>/g, '&gt;')
++    .replace(/"/g, '&quot;')
++    .replace(/'/g, '&#039;');
++}
++
++function display(value: unknown, fallback = '—'): string {
++  if (value === null || value === undefined || value === '') {
++    return fallback;
++  }
++  return escapeHtml(value);
++}
++
++function formatDate(value: unknown): string {
++  if (!value) {
++    return '—';
++  }
++  const date = new Date(String(value));
++  if (Number.isNaN(date.getTime())) {
++    return display(value);
++  }
++  return escapeHtml(
++    new Intl.DateTimeFormat('en-US', {
++      dateStyle: 'medium',
++      timeStyle: 'short',
++    }).format(date),
++  );
++}
++
++function section(title: string, content: string): string {
++  return `<section><h2>${escapeHtml(title)}</h2>${content}</section>`;
++}
++
++function definitionGrid(items: Array<[string, unknown]>): string {
++  return `<dl class="definition-grid">${items
++    .map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${display(value)}</dd></div>`)
++    .join('')}</dl>`;
++}
++
++function measurementRows(report: UnknownRecord): string {
++  const raw = array(report.measurements).map(record);
++  const derived = array(report.derivedMeasurements).map(record);
++
++  const rawRows = raw.map((measurement) => {
++    const value = measurement.canonicalValue ?? measurement.value ?? measurement.textValue;
++    const unit = measurement.canonicalUnit ?? measurement.unit ?? '';
++    return `<tr>
++      <td>${display(measurement.label ?? measurement.measurementKey)}</td>
++      <td>${display(value)} ${escapeHtml(unit)}</td>
++      <td>${display(measurement.stage ?? 'INITIAL')}</td>
++      <td>${measurement.verified ? 'Verified' : 'Recorded'}</td>
++    </tr>`;
++  });
++
++  const derivedRows = derived.map((measurement) => `<tr class="derived">
++    <td>${display(measurement.label ?? measurement.key ?? measurement.measurementKey)} <span>Calculated</span></td>
++    <td>${display(measurement.value)} ${display(measurement.unit, '')}</td>
++    <td>${display(measurement.stage ?? 'INITIAL')}</td>
++    <td>${display(measurement.calculationVersion, 'Deterministic engine')}</td>
++  </tr>`);
++
++  if (rawRows.length + derivedRows.length === 0) {
++    return '<p class="muted">No measurements were recorded.</p>';
++  }
++
++  return `<div class="table-wrap"><table>
++    <thead><tr><th>Measurement</th><th>Value</th><th>Stage</th><th>Evidence</th></tr></thead>
++    <tbody>${[...rawRows, ...derivedRows].join('')}</tbody>
++  </table></div>`;
++}
++
++function findingCards(report: UnknownRecord): string {
++  const findings = array(report.findings).map(record);
++  if (findings.length === 0) {
++    return '<p class="muted">No diagnostic findings were recorded.</p>';
++  }
++
++  return `<div class="finding-list">${findings
++    .map((finding) => {
++      const nextTest = record(finding.nextTest);
++      const evidence = array(finding.evidence).map(String);
++      const missing = array(finding.missingEvidence).map(String);
++      return `<article class="finding ${escapeHtml(String(finding.severity ?? 'INFO').toLowerCase())}">
++        <div class="finding-head">
++          <h3>${display(finding.title)}</h3>
++          <span>${display(finding.supportLevel)}</span>
++        </div>
++        <p>${display(finding.summary)}</p>
++        ${
++          evidence.length
++            ? `<h4>Evidence</h4><ul>${evidence.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`
++            : ''
++        }
++        ${
++          missing.length
++            ? `<h4>Missing or conflicting evidence</h4><ul>${missing.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`
++            : ''
++        }
++        ${
++          Object.keys(nextTest).length
++            ? `<div class="next-test"><strong>Next verification:</strong> ${display(nextTest.instructions ?? nextTest.title)}</div>`
++            : ''
++        }
++      </article>`;
++    })
++    .join('')}</div>`;
++}
++
++function referenceRows(report: UnknownRecord): string {
++  const references = array(report.references).map(record);
++  if (references.length === 0) {
++    return '<p class="muted">No model-matched manufacturer reference was available. Generic field interpretation must not be presented as an OEM requirement.</p>';
++  }
++
++  return `<div class="table-wrap"><table>
++    <thead><tr><th>Metric</th><th>Target / Range</th><th>Match</th><th>Source</th></tr></thead>
++    <tbody>${references
++      .map((reference) => {
++        const target =
++          reference.targetValue !== null && reference.targetValue !== undefined
++            ? `${reference.targetValue}${reference.tolerance !== null && reference.tolerance !== undefined ? ` ± ${reference.tolerance}` : ''}`
++            : `${reference.minValue ?? '—'} to ${reference.maxValue ?? '—'}`;
++        const source = [
++          reference.documentTitle,
++          reference.documentNumber,
++          reference.revision ? `rev. ${reference.revision}` : null,
++          reference.pageNumber ? `p. ${reference.pageNumber}` : null,
++        ]
++          .filter(Boolean)
++          .join(' · ');
++        return `<tr>
++          <td>${display(reference.metricKey)}</td>
++          <td>${display(target)} ${display(reference.unit, '')}</td>
++          <td>${display(reference.matchLevel)}</td>
++          <td>${display(source)}</td>
++        </tr>`;
++      })
++      .join('')}</tbody>
++  </table></div>`;
++}
++
++export function renderHvacDiagnosticReportHtml(
++  reportValue: unknown,
++  kind: 'TECHNICAL' | 'CUSTOMER',
++): string {
++  const report = record(reportValue);
++  const session = record(report.session);
++  const customer = record(report.customer);
++  const job = record(report.job);
++  const technician = record(report.technician);
++  const equipment = array(report.equipment).map(record);
++
++  const equipmentCards = equipment.length
++    ? `<div class="equipment-grid">${equipment
++        .map(
++          (component) => `<article>
++            <h3>${display(component.componentType, 'Equipment')}</h3>
++            ${definitionGrid([
++              ['Manufacturer', component.manufacturer],
++              ['Model', component.model],
++              ['Serial', component.serial],
++              ['Refrigerant', component.refrigerant],
++              ['Metering device', component.meteringDevice],
++              ['Voltage / phase', [component.voltage, component.phase].filter(Boolean).join(' / ')],
++            ])}
++          </article>`,
++        )
++        .join('')}</div>`
++    : '<p class="muted">No equipment components were recorded.</p>';
++
++  const finalDiagnosis = session.finalDiagnosis ?? report.finalDiagnosis;
++  const title = kind === 'CUSTOMER' ? 'Service Diagnostic Summary' : 'HVAC Technical Diagnostic Report';
++
++  return `<!doctype html>
++<html lang="en">
++<head>
++  <meta charset="utf-8" />
++  <meta name="viewport" content="width=device-width, initial-scale=1" />
++  <title>${escapeHtml(title)}</title>
++  <style>
++    :root { color-scheme: light; font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
++    * { box-sizing: border-box; }
++    body { margin: 0; background: #eef3f8; color: #142033; }
++    .report { width: min(980px, calc(100% - 24px)); margin: 18px auto; background: white; border-radius: 16px; box-shadow: 0 12px 36px rgba(20,32,51,.12); overflow: hidden; }
++    header { background: #10233e; color: white; padding: 28px 32px; }
++    header h1 { margin: 0; font-size: 26px; }
++    header p { margin: 8px 0 0; color: #c8d7e9; }
++    main { padding: 24px 32px 36px; }
++    section { margin: 0 0 28px; break-inside: avoid; }
++    h2 { margin: 0 0 13px; font-size: 18px; color: #10233e; border-bottom: 2px solid #e8eef5; padding-bottom: 8px; }
++    h3 { margin: 0 0 8px; font-size: 15px; }
++    h4 { margin: 12px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
++    p, li, td, dd { font-size: 13px; line-height: 1.55; }
++    .definition-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin: 0; }
++    .definition-grid div { border: 1px solid #dce5ef; border-radius: 9px; padding: 10px; }
++    dt { color: #61738a; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
++    dd { margin: 3px 0 0; font-weight: 600; }
++    .equipment-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
++    .equipment-grid article { border: 1px solid #dce5ef; border-radius: 10px; padding: 14px; }
++    .table-wrap { overflow-x: auto; }
++    table { width: 100%; border-collapse: collapse; }
++    th { background: #f0f5fa; color: #455a73; text-align: left; font-size: 11px; text-transform: uppercase; padding: 9px; }
++    td { border-bottom: 1px solid #e4ebf2; padding: 9px; vertical-align: top; }
++    tr.derived td:first-child span { display: inline-block; margin-left: 5px; padding: 2px 5px; border-radius: 999px; background: #e5f4f0; color: #087b65; font-size: 9px; }
++    .finding-list { display: grid; gap: 12px; }
++    .finding { border: 1px solid #dce5ef; border-left: 5px solid #5c789a; border-radius: 10px; padding: 14px; break-inside: avoid; }
++    .finding.safety { border-left-color: #bf2d3c; }
++    .finding.repair { border-left-color: #cf7b18; }
++    .finding.attention { border-left-color: #dba90b; }
++    .finding-head { display: flex; justify-content: space-between; gap: 12px; }
++    .finding-head span { white-space: nowrap; color: #54677e; font-size: 10px; font-weight: 700; }
++    .finding p { margin: 5px 0; }
++    .finding ul { margin: 4px 0 0; padding-left: 20px; }
++    .next-test { margin-top: 10px; padding: 9px 11px; border-radius: 8px; background: #eef6ff; color: #173b63; font-size: 12px; }
++    .diagnosis { padding: 16px; border-radius: 10px; background: ${finalDiagnosis ? '#e9f8f3' : '#fff7df'}; border: 1px solid ${finalDiagnosis ? '#a7dece' : '#ead28f'}; }
++    .muted { color: #697b90; font-style: italic; }
++    .disclaimer { margin-top: 30px; padding: 12px; background: #f6f8fb; border-radius: 8px; color: #586b82; font-size: 11px; }
++    .print-button { position: fixed; right: 18px; bottom: 18px; border: 0; border-radius: 999px; padding: 12px 18px; background: #137c6b; color: white; font-weight: 700; box-shadow: 0 6px 18px rgba(0,0,0,.2); cursor: pointer; }
++    @media (max-width: 640px) { header, main { padding-left: 18px; padding-right: 18px; } .report { width: 100%; margin: 0; border-radius: 0; } .finding-head { display: block; } }
++    @media print { body { background: white; } .report { width: 100%; margin: 0; box-shadow: none; border-radius: 0; } .print-button { display: none; } section { break-inside: auto; } .finding, .equipment-grid article { break-inside: avoid; } }
++  </style>
++</head>
++<body>
++  <article class="report">
++    <header>
++      <h1>${escapeHtml(title)}</h1>
++      <p>Russell Comfort Solutions · Generated ${formatDate(report.generatedAt)}</p>
++    </header>
++    <main>
++      ${section('Service call', definitionGrid([
++        ['Customer', customer.fullName],
++        ['Address', [customer.addressLine1, customer.city, customer.state, customer.postalCode].filter(Boolean).join(', ')],
++        ['Job', job.title ?? job.id],
++        ['Job status', job.status],
++        ['Technician', technician.name ?? technician.email],
++        ['Started', formatDate(session.startedAt)],
++        ['Operating mode', session.operatingMode],
++        ['Altitude', session.altitudeFt ? `${session.altitudeFt} ft` : null],
++      ]))}
++      ${section('Customer complaint', `<p>${display(session.complaintText, 'No complaint was recorded.')}</p>`)}
++      ${section('Equipment', equipmentCards)}
++      ${section('Measurements and calculated results', measurementRows(report))}
++      ${section(kind === 'CUSTOMER' ? 'What we found' : 'Diagnostic findings and verification path', findingCards(report))}
++      ${section('Manufacturer references', referenceRows(report))}
++      ${section('Technician-confirmed outcome', `<div class="diagnosis"><strong>${finalDiagnosis ? 'Final diagnosis' : 'Status'}</strong><p>${display(finalDiagnosis, session.status === 'INCONCLUSIVE' ? 'The diagnostic was recorded as inconclusive.' : 'A final diagnosis has not yet been confirmed by the technician.')}</p></div>`)}
++      <div class="disclaimer">${display(report.disclaimer, 'Diagnostic guidance supports evidence collection. The technician remains responsible for safety, verification, and the final diagnosis.')}</div>
++    </main>
++  </article>
++  <button class="print-button" onclick="window.print()">Print / Save PDF</button>
++</body>
++</html>`;
++}
+diff --git a/apps/api/src/hvac-diagnostic-routes.ts b/apps/api/src/hvac-diagnostic-routes.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..3d27c01a8588341aa3a6f1e9d4e8fbda443453b8
+--- /dev/null
++++ b/apps/api/src/hvac-diagnostic-routes.ts
+@@ -0,0 +1,651 @@
++import type { Express, Request } from 'express';
++import multer from 'multer';
++
++import {
++  ActorType,
++  ExecutionStatus,
++  HvacDiagnosticReportKind,
++  HvacDiagnosticSessionStatus,
++  type PrismaClient,
++} from '@rcs/db';
++import {
++  HVAC_MEASUREMENT_DEFINITIONS,
++  buildDeterministicHvacAssistantReply,
++  evaluateHvacDiagnosticSnapshot,
++  getHvacNextStep,
++} from '@rcs/shared';
++import {
++  ToolRegistry,
++  buildCurrentHvacReport,
++  buildHvacSnapshotFromDetail,
++  loadApplicableHvacReferencesForSession,
++  loadHvacDiagnosticSessionDetail,
++  lookupHvacOemReferences,
++  type ToolExecutionResponse,
++} from '@rcs/tool-registry';
++
++import {
++  extractHvacNameplate,
++  generateHvacConversationalReply,
++} from './hvac-diagnostic-ai.js';
++import { renderHvacDiagnosticReportHtml } from './hvac-diagnostic-report.js';
++
++type AccessResult = {
++  user: { id: string };
++  permissions: string[];
++};
++
++type RegisterHvacDiagnosticRoutesArgs = {
++  app: Express;
++  prisma: PrismaClient;
++  registry: ToolRegistry;
++  getOrgId: (req: Request) => Promise<string>;
++  requireAnyPermission: (
++    req: Request,
++    orgId: string,
++    requiredPermissions: string[],
++  ) => Promise<AccessResult>;
++  executionStatusCode: (result: ToolExecutionResponse, executedCode?: number) => number;
++};
++
++const nameplateUpload = multer({
++  storage: multer.memoryStorage(),
++  limits: {
++    fileSize: Number(process.env.NAMEPLATE_UPLOAD_MAX_FILE_BYTES ?? 12 * 1024 * 1024),
++  },
++});
++
++function bodyObject(value: unknown): Record<string, unknown> {
++  return value && typeof value === 'object' && !Array.isArray(value)
++    ? (value as Record<string, unknown>)
++    : {};
++}
++
++function paramValue(value: string | string[] | undefined): string {
++  return Array.isArray(value) ? value[0] ?? '' : value ?? '';
++}
++
++function queryString(value: unknown): string | null {
++  return typeof value === 'string' && value.trim() ? value.trim() : null;
++}
++
++function errorStatus(error: unknown): number {
++  return (error as Error & { status?: number }).status ?? 400;
++}
++
++function errorMessage(error: unknown): string {
++  return error instanceof Error ? error.message : 'Unknown HVAC diagnostic error';
++}
++
++function executionFromStored(row: {
++  id: string;
++  status: ExecutionStatus;
++  outputPayload: unknown;
++  blockedReason: string | null;
++  errorMessage: string | null;
++  approvalRequestId: string | null;
++}): ToolExecutionResponse | null {
++  if (row.status === ExecutionStatus.EXECUTED && row.outputPayload !== null) {
++    return {
++      status: 'EXECUTED',
++      executionId: row.id,
++      output: row.outputPayload as never,
++    };
++  }
++  if (row.status === ExecutionStatus.BLOCKED) {
++    return {
++      status: 'BLOCKED',
++      executionId: row.id,
++      reason: row.blockedReason ?? 'Previously blocked',
++    };
++  }
++  if (row.status === ExecutionStatus.FAILED) {
++    return {
++      status: 'FAILED',
++      executionId: row.id,
++      error: row.errorMessage ?? 'Previous execution failed',
++    };
++  }
++  return null;
++}
++
++async function executeIdempotent(args: {
++  prisma: PrismaClient;
++  registry: ToolRegistry;
++  orgId: string;
++  actorUserId: string;
++  toolName: string;
++  payload: Record<string, unknown>;
++  clientActionId?: string | null;
++  reason: string;
++}): Promise<ToolExecutionResponse> {
++  const clientActionId = args.clientActionId?.trim() || null;
++  if (clientActionId) {
++    const existing = await args.prisma.toolExecution.findFirst({
++      where: {
++        orgId: args.orgId,
++        clientActionId,
++        toolDefinition: { name: args.toolName },
++      },
++      select: {
++        id: true,
++        status: true,
++        outputPayload: true,
++        blockedReason: true,
++        errorMessage: true,
++        approvalRequestId: true,
++      },
++      orderBy: { createdAt: 'desc' },
++    });
++    if (existing) {
++      const replay = executionFromStored(existing);
++      if (replay) {
++        return replay;
++      }
++    }
++  }
++
++  return args.registry.execute(args.toolName, args.payload, {
++    orgId: args.orgId,
++    actorType: ActorType.HUMAN,
++    actorUserId: args.actorUserId,
++    actorLabel: 'api-hvac-diagnostic-pwa',
++    isAutonomous: false,
++    clientActionId: clientActionId ?? undefined,
++    reason: args.reason,
++  });
++}
++
++async function detailPayload(prisma: PrismaClient, orgId: string, sessionId: string) {
++  const detail = await loadHvacDiagnosticSessionDetail(prisma, orgId, sessionId);
++  if (!detail) {
++    const notFound = new Error('HVAC diagnostic session not found');
++    (notFound as Error & { status?: number }).status = 404;
++    throw notFound;
++  }
++  const snapshot = await buildHvacSnapshotFromDetail(prisma, detail);
++  const nextStep = getHvacNextStep(snapshot, 'INITIAL');
++  const currentFindings = evaluateHvacDiagnosticSnapshot(snapshot, 'INITIAL');
++  const references = await loadApplicableHvacReferencesForSession(prisma, detail);
++
++  return {
++    session: detail,
++    snapshot,
++    nextStep,
++    findings: currentFindings,
++    references,
++    measurementDefinitions: Object.values(HVAC_MEASUREMENT_DEFINITIONS),
++  };
++}
++
++export function registerHvacDiagnosticRoutes({
++  app,
++  prisma,
++  registry,
++  getOrgId,
++  requireAnyPermission,
++  executionStatusCode,
++}: RegisterHvacDiagnosticRoutesArgs): void {
++  app.get('/api/hvac/context', async (req, res) => {
++    try {
++      const orgId = await getOrgId(req);
++      const access = await requireAnyPermission(req, orgId, [
++        'hvac:diagnostic:read',
++        'hvac:diagnostic:write',
++        '*',
++      ]);
++
++      const [jobs, equipmentSystems, technicians] = await Promise.all([
++        prisma.job.findMany({
++          where: {
++            orgId,
++            OR: [
++              { status: { notIn: ['CLOSED', 'CANCELLED', 'CANCELED'] } },
++              { updatedAt: { gte: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) } },
++            ],
++          },
++          include: {
++            customer: true,
++            assignedToUser: {
++              select: { id: true, name: true, email: true },
++            },
++            appointments: {
++              orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
++              take: 3,
++            },
++            hvacDiagnosticSessions: {
++              select: { id: true, status: true, updatedAt: true },
++              orderBy: { updatedAt: 'desc' },
++              take: 3,
++            },
++          },
++          orderBy: [{ scheduledAt: 'desc' }, { updatedAt: 'desc' }],
++          take: 80,
++        }),
++        prisma.hvacEquipmentSystem.findMany({
++          where: { orgId },
++          include: {
++            customer: true,
++            components: { orderBy: { createdAt: 'asc' } },
++          },
++          orderBy: { updatedAt: 'desc' },
++          take: 100,
++        }),
++        prisma.user.findMany({
++          where: { orgId, isActive: true, actorType: ActorType.HUMAN },
++          select: { id: true, name: true, email: true, employeeCode: true },
++          orderBy: { name: 'asc' },
++        }),
++      ]);
++
++      res.json({
++        actorUserId: access.user.id,
++        jobs,
++        equipmentSystems,
++        technicians,
++        measurementDefinitions: Object.values(HVAC_MEASUREMENT_DEFINITIONS),
++      });
++    } catch (error) {
++      res.status(errorStatus(error)).json({ error: errorMessage(error) });
++    }
++  });
++
++  app.get('/api/hvac/diagnostics', async (req, res) => {
++    try {
++      const orgId = await getOrgId(req);
++      await requireAnyPermission(req, orgId, [
++        'hvac:diagnostic:read',
++        'hvac:diagnostic:write',
++        '*',
++      ]);
++      const status = queryString(req.query.status);
++      const jobId = queryString(req.query.jobId);
++      const takeValue = Number(req.query.limit ?? 50);
++      const take = Number.isFinite(takeValue) ? Math.min(Math.max(Math.round(takeValue), 1), 100) : 50;
++
++      const sessions = await prisma.hvacDiagnosticSession.findMany({
++        where: {
++          orgId,
++          ...(status && Object.values(HvacDiagnosticSessionStatus).includes(status as HvacDiagnosticSessionStatus)
++            ? { status: status as HvacDiagnosticSessionStatus }
++            : {}),
++          ...(jobId ? { jobId } : {}),
++        },
++        include: {
++          job: { include: { customer: true } },
++          customer: true,
++          technician: { select: { id: true, name: true, email: true } },
++          equipmentSystem: {
++            include: { components: { orderBy: { createdAt: 'asc' } } },
++          },
++          _count: {
++            select: {
++              measurements: true,
++              findings: true,
++              messages: true,
++            },
++          },
++        },
++        orderBy: { updatedAt: 'desc' },
++        take,
++      });
++
++      res.json({ sessions });
++    } catch (error) {
++      res.status(errorStatus(error)).json({ error: errorMessage(error) });
++    }
++  });
++
++  app.post('/api/hvac/diagnostics', async (req, res) => {
++    try {
++      const orgId = await getOrgId(req);
++      const access = await requireAnyPermission(req, orgId, [
++        'hvac:diagnostic:write',
++        '*',
++      ]);
++      const body = bodyObject(req.body);
++      const { clientActionId, ...payload } = body;
++      const result = await executeIdempotent({
++        prisma,
++        registry,
++        orgId,
++        actorUserId: access.user.id,
++        toolName: 'hvac.diagnostic.session.create',
++        payload,
++        clientActionId: queryString(clientActionId),
++        reason: 'Create HVAC diagnostic session linked to CRM',
++      });
++
++      res.status(executionStatusCode(result, 201)).json(result);
++    } catch (error) {
++      res.status(errorStatus(error)).json({ error: errorMessage(error) });
++    }
++  });
++
++  app.get('/api/hvac/diagnostics/:id/report', async (req, res) => {
++    try {
++      const orgId = await getOrgId(req);
++      await requireAnyPermission(req, orgId, [
++        'hvac:diagnostic:read',
++        'hvac:diagnostic:write',
++        '*',
++      ]);
++      const sessionId = paramValue(req.params.id);
++      const kind = queryString(req.query.kind)?.toUpperCase() === 'CUSTOMER'
++        ? HvacDiagnosticReportKind.CUSTOMER
++        : HvacDiagnosticReportKind.TECHNICAL;
++      const format = queryString(req.query.format)?.toLowerCase() ?? 'html';
++
++      const detail = await loadHvacDiagnosticSessionDetail(prisma, orgId, sessionId);
++      if (!detail) {
++        res.status(404).json({ error: 'HVAC diagnostic session not found' });
++        return;
++      }
++
++      const stored = detail.reports.find((report) => report.kind === kind);
++      let report: unknown = stored?.reportJson ?? null;
++      if (!report) {
++        const technical = await buildCurrentHvacReport(prisma, detail);
++        report = kind === HvacDiagnosticReportKind.TECHNICAL
++          ? technical
++          : {
++              ...technical,
++              schemaVersion: 'hvac-customer-report-v1-preview',
++              messages: [],
++            };
++      }
++
++      if (format === 'json') {
++        res.json({ kind, report, persisted: Boolean(stored) });
++        return;
++      }
++
++      res.setHeader('Content-Type', 'text/html; charset=utf-8');
++      res.setHeader('Cache-Control', 'private, no-store');
++      res.send(renderHvacDiagnosticReportHtml(report, kind));
++    } catch (error) {
++      res.status(errorStatus(error)).json({ error: errorMessage(error) });
++    }
++  });
++
++  app.get('/api/hvac/diagnostics/:id', async (req, res) => {
++    try {
++      const orgId = await getOrgId(req);
++      await requireAnyPermission(req, orgId, [
++        'hvac:diagnostic:read',
++        'hvac:diagnostic:write',
++        '*',
++      ]);
++      res.json(await detailPayload(prisma, orgId, paramValue(req.params.id)));
++    } catch (error) {
++      res.status(errorStatus(error)).json({ error: errorMessage(error) });
++    }
++  });
++
++  app.patch('/api/hvac/diagnostics/:id', async (req, res) => {
++    try {
++      const orgId = await getOrgId(req);
++      const access = await requireAnyPermission(req, orgId, ['hvac:diagnostic:write', '*']);
++      const body = bodyObject(req.body);
++      const { clientActionId, ...changes } = body;
++      const sessionId = paramValue(req.params.id);
++      const result = await executeIdempotent({
++        prisma,
++        registry,
++        orgId,
++        actorUserId: access.user.id,
++        toolName: 'hvac.diagnostic.session.update',
++        payload: { ...changes, sessionId },
++        clientActionId: queryString(clientActionId),
++        reason: 'Update HVAC diagnostic session',
++      });
++      res.status(executionStatusCode(result, 200)).json(result);
++    } catch (error) {
++      res.status(errorStatus(error)).json({ error: errorMessage(error) });
++    }
++  });
++
++  app.post('/api/hvac/diagnostics/:id/measurements', async (req, res) => {
++    try {
++      const orgId = await getOrgId(req);
++      const access = await requireAnyPermission(req, orgId, ['hvac:diagnostic:write', '*']);
++      const body = bodyObject(req.body);
++      const sessionId = paramValue(req.params.id);
++      const clientActionId = queryString(body.clientActionId);
++      const measurements = Array.isArray(body.measurements)
++        ? body.measurements
++        : body.measurement && typeof body.measurement === 'object'
++          ? [body.measurement]
++          : [];
++      const result = await executeIdempotent({
++        prisma,
++        registry,
++        orgId,
++        actorUserId: access.user.id,
++        toolName: 'hvac.diagnostic.measurement.record',
++        payload: { sessionId, measurements },
++        clientActionId,
++        reason: 'Record structured HVAC diagnostic measurements',
++      });
++      res.status(executionStatusCode(result, 201)).json(result);
++    } catch (error) {
++      res.status(errorStatus(error)).json({ error: errorMessage(error) });
++    }
++  });
++
++  app.post('/api/hvac/diagnostics/:id/messages', async (req, res) => {
++    try {
++      const orgId = await getOrgId(req);
++      const access = await requireAnyPermission(req, orgId, ['hvac:diagnostic:write', '*']);
++      const body = bodyObject(req.body);
++      const text = queryString(body.text);
++      if (!text) {
++        res.status(400).json({ error: 'Message text is required' });
++        return;
++      }
++      const sessionId = paramValue(req.params.id);
++      const clientActionId = queryString(body.clientActionId);
++
++      const before = await loadHvacDiagnosticSessionDetail(prisma, orgId, sessionId);
++      if (!before) {
++        res.status(404).json({ error: 'HVAC diagnostic session not found' });
++        return;
++      }
++
++      if (!before.complaintText) {
++        await executeIdempotent({
++          prisma,
++          registry,
++          orgId,
++          actorUserId: access.user.id,
++          toolName: 'hvac.diagnostic.session.update',
++          payload: { sessionId, complaintText: text },
++          clientActionId: clientActionId ? `${clientActionId}:complaint` : null,
++          reason: 'Capture initial customer complaint from technician conversation',
++        });
++      }
++
++      const technicianResult = await executeIdempotent({
++        prisma,
++        registry,
++        orgId,
++        actorUserId: access.user.id,
++        toolName: 'hvac.diagnostic.message.add',
++        payload: {
++          sessionId,
++          role: 'TECHNICIAN',
++          text,
++          structured: { source: 'PWA_CONVERSATION' },
++        },
++        clientActionId,
++        reason: 'Record technician diagnostic conversation message',
++      });
++      if (technicianResult.status !== 'EXECUTED') {
++        res.status(executionStatusCode(technicianResult, 201)).json(technicianResult);
++        return;
++      }
++
++      const updated = await loadHvacDiagnosticSessionDetail(prisma, orgId, sessionId);
++      if (!updated) {
++        res.status(404).json({ error: 'HVAC diagnostic session not found after message' });
++        return;
++      }
++      const snapshot = await buildHvacSnapshotFromDetail(prisma, updated);
++      const findings = evaluateHvacDiagnosticSnapshot(snapshot, 'INITIAL');
++      const nextStep = getHvacNextStep(snapshot, 'INITIAL');
++      const deterministicFallback = buildDeterministicHvacAssistantReply(snapshot, 'INITIAL');
++      const assistant = await generateHvacConversationalReply({
++        snapshot,
++        findings,
++        nextStep,
++        technicianMessage: text,
++        deterministicFallback,
++      });
++
++      const assistantResult = await executeIdempotent({
++        prisma,
++        registry,
++        orgId,
++        actorUserId: access.user.id,
++        toolName: 'hvac.diagnostic.message.add',
++        payload: {
++          sessionId,
++          role: 'ASSISTANT',
++          text: assistant.text,
++          provider: assistant.provider,
++          ...(assistant.model ? { providerModel: assistant.model } : {}),
++          structured: {
++            nextStep,
++            findingCodes: findings.map((finding) => finding.code),
++            fallbackReason: assistant.fallbackReason ?? null,
++          },
++        },
++        clientActionId: clientActionId ? `${clientActionId}:assistant` : null,
++        reason: 'Record governed HVAC conversational guidance',
++      });
++
++      res.status(executionStatusCode(assistantResult, 201)).json({
++        technicianResult,
++        assistantResult,
++        assistant,
++        ...(await detailPayload(prisma, orgId, sessionId)),
++      });
++    } catch (error) {
++      res.status(errorStatus(error)).json({ error: errorMessage(error) });
++    }
++  });
++
++  app.post('/api/hvac/diagnostics/:id/verifications', async (req, res) => {
++    try {
++      const orgId = await getOrgId(req);
++      const access = await requireAnyPermission(req, orgId, ['hvac:diagnostic:write', '*']);
++      const body = bodyObject(req.body);
++      const { clientActionId, ...payload } = body;
++      const sessionId = paramValue(req.params.id);
++      const result = await executeIdempotent({
++        prisma,
++        registry,
++        orgId,
++        actorUserId: access.user.id,
++        toolName: 'hvac.diagnostic.verification.record',
++        payload: { ...payload, sessionId },
++        clientActionId: queryString(clientActionId),
++        reason: 'Record HVAC verification test and technician confirmation',
++      });
++      res.status(executionStatusCode(result, 201)).json(result);
++    } catch (error) {
++      res.status(errorStatus(error)).json({ error: errorMessage(error) });
++    }
++  });
++
++  app.post('/api/hvac/diagnostics/:id/finalize', async (req, res) => {
++    try {
++      const orgId = await getOrgId(req);
++      const access = await requireAnyPermission(req, orgId, [
++        'hvac:diagnostic:finalize',
++        '*',
++      ]);
++      const body = bodyObject(req.body);
++      const { clientActionId, ...payload } = body;
++      const sessionId = paramValue(req.params.id);
++      const result = await executeIdempotent({
++        prisma,
++        registry,
++        orgId,
++        actorUserId: access.user.id,
++        toolName: 'hvac.diagnostic.finalize',
++        payload: { ...payload, sessionId, technicianConfirmed: true },
++        clientActionId: queryString(clientActionId),
++        reason: 'Technician confirmed HVAC diagnostic outcome and generated reports',
++      });
++      res.status(executionStatusCode(result, 200)).json(result);
++    } catch (error) {
++      res.status(errorStatus(error)).json({ error: errorMessage(error) });
++    }
++  });
++
++  app.post('/api/hvac/nameplate/parse', nameplateUpload.single('image'), async (req, res) => {
++    try {
++      const orgId = await getOrgId(req);
++      await requireAnyPermission(req, orgId, ['hvac:diagnostic:write', '*']);
++      if (!req.file) {
++        res.status(400).json({ error: 'Nameplate image is required' });
++        return;
++      }
++      const result = await extractHvacNameplate({
++        imageBuffer: req.file.buffer,
++        mimeType: req.file.mimetype,
++      });
++      res.json({ ...result, requiresTechnicianConfirmation: true });
++    } catch (error) {
++      const status = errorMessage(error).includes('unavailable until') ? 503 : errorStatus(error);
++      res.status(status).json({ error: errorMessage(error) });
++    }
++  });
++
++  app.get('/api/hvac/oem/references/lookup', async (req, res) => {
++    try {
++      const orgId = await getOrgId(req);
++      await requireAnyPermission(req, orgId, ['hvac:oem:read', 'hvac:oem:manage', '*']);
++      const manufacturer = queryString(req.query.manufacturer);
++      const model = queryString(req.query.model);
++      if (!manufacturer || !model) {
++        res.status(400).json({ error: 'manufacturer and model are required' });
++        return;
++      }
++      const references = await lookupHvacOemReferences(prisma, {
++        orgId,
++        manufacturer,
++        model,
++        equipmentComponentType: queryString(req.query.equipmentComponentType),
++        operatingMode: queryString(req.query.operatingMode),
++        refrigerant: queryString(req.query.refrigerant),
++      });
++      res.json({ references });
++    } catch (error) {
++      res.status(errorStatus(error)).json({ error: errorMessage(error) });
++    }
++  });
++
++  app.post('/api/hvac/oem/references', async (req, res) => {
++    try {
++      const orgId = await getOrgId(req);
++      const access = await requireAnyPermission(req, orgId, ['hvac:oem:manage', '*']);
++      const body = bodyObject(req.body);
++      const { clientActionId, ...payload } = body;
++      const result = await executeIdempotent({
++        prisma,
++        registry,
++        orgId,
++        actorUserId: access.user.id,
++        toolName: 'hvac.oem.reference.upsert',
++        payload,
++        clientActionId: queryString(clientActionId),
++        reason: 'Human-reviewed HVAC OEM document reference update',
++      });
++      res.status(executionStatusCode(result, 201)).json(result);
++    } catch (error) {
++      res.status(errorStatus(error)).json({ error: errorMessage(error) });
++    }
++  });
++}
+diff --git a/apps/web/public/icon.svg b/apps/web/public/icon.svg
+new file mode 100644
+index 0000000000000000000000000000000000000000..7b5b38d303580c300462aabf454fd789b9a075b9
+--- /dev/null
++++ b/apps/web/public/icon.svg
+@@ -0,0 +1,24 @@
++<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
++  <defs>
++    <linearGradient id="bg" x1="70" y1="40" x2="450" y2="470" gradientUnits="userSpaceOnUse">
++      <stop stop-color="#2563eb"/>
++      <stop offset="1" stop-color="#0f766e"/>
++    </linearGradient>
++    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
++      <feDropShadow dx="0" dy="18" std
